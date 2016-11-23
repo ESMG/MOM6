@@ -12,11 +12,16 @@ use MOM_file_parser, only : get_param, log_version, param_file_type, log_param
 use MOM_grid, only : ocean_grid_type
 use MOM_dyn_horgrid, only : dyn_horgrid_type
 use MOM_io, only : EAST_FACE, NORTH_FACE
-use MOM_io, only : slasher, read_data
+use MOM_io, only : slasher, read_data, field_size
 use MOM_obsolete_params, only : obsolete_logical, obsolete_int, obsolete_real, obsolete_char
 use MOM_string_functions, only : extract_word, remove_spaces
 use MOM_tracer_registry, only : add_tracer_OBC_values, tracer_registry_type
 use MOM_variables, only : thermo_var_ptrs
+use time_interp_external_mod, only : init_external_field, time_interp_external
+use MOM_remapping, only : remappingSchemesDoc, remappingDefaultScheme, remapping_CS, initialize_remapping
+use MOM_remapping, only : remapping_core_h, end_remapping
+use MOM_regridding, only : regridding_CS
+use MOM_verticalGrid, only : verticalGrid_type
 
 implicit none ; private
 
@@ -30,6 +35,7 @@ public open_boundary_impose_normal_slope
 public open_boundary_impose_land_mask
 public radiation_open_bdry_conds
 public set_Flather_data
+public update_obc_segment_data
 
 integer, parameter, public :: OBC_NONE = 0, OBC_SIMPLE = 1, OBC_WALL = 2
 integer, parameter, public :: OBC_FLATHER = 3
@@ -38,9 +44,20 @@ integer, parameter, public :: OBC_DIRECTION_N = 100 !< Indicates the boundary is
 integer, parameter, public :: OBC_DIRECTION_S = 200 !< Indicates the boundary is an effective southern boundary
 integer, parameter, public :: OBC_DIRECTION_E = 300 !< Indicates the boundary is an effective eastern boundary
 integer, parameter, public :: OBC_DIRECTION_W = 400 !< Indicates the boundary is an effective western boundary
+integer, parameter         :: MAX_OBC_FIELDS = 100  !< Maximum number of data fields needed for OBC segments
 
-!> Open boundary segment type - we'll have one for each open segment
-!! to describe that segment.
+
+type, public :: OBC_segment_data_type
+  integer :: fid                                ! handle from FMS associated with segment data on disk
+  integer :: fid_dz                             ! handle from FMS associated with segment thicknesses on disk
+  character(len=8)                :: name       ! a name identifier for the segment data 
+  real, dimension(:,:,:), pointer :: buffer_src ! buffer for segment data on the model interpolated to 
+                                                ! horizontal grid faces.
+  integer                         :: nk_src     ! Number of vertical levels in the source data
+  real, dimension(:,:,:), pointer :: dz_src     ! vertical grid cell spacing of the incoming segment data (m)
+  real, dimension(:,:,:), pointer :: buffer_dst ! buffer src data remapped to the target vertical grid
+end type OBC_segment_data_type
+
 type, public :: OBC_segment_type
   logical :: Flather        !< If true, applies Flather + Chapman radiation of barotropic gravity waves.
   logical :: radiation      !< If true, 1D Orlanksi radiation boundary conditions are applied.
@@ -52,6 +69,9 @@ type, public :: OBC_segment_type
   logical :: values_needed  !< Whether or not baroclinic OBC fields are needed.
   logical :: legacy         !< Old code for tangential BT velocities.
   integer :: direction      !< Boundary faces one of the four directions.
+  type(OBC_segment_data_type), dimension(:), pointer :: field   !<  OBC data
+  integer :: num_fields !< number of OBC data fields (e.g. u_normal,u_parallel and eta for Flather)
+  character(len=8), dimension(:), pointer :: field_names !< field names for this segment
   integer :: Is_obc         !< i-indices of boundary segment.
   integer :: Ie_obc         !< i-indices of boundary segment.
   integer :: Js_obc         !< j-indices of boundary segment.
@@ -123,6 +143,7 @@ type, public :: ocean_OBC_type
   logical :: OBC_pe !< Is there an open boundary on this tile?
   logical :: update_OBC = .false. !< Is the open boundary info going to get updated?
   character(len=200) :: OBC_values_config
+  type(remapping_CS), pointer         :: remap_CS   ! ALE remapping control structure for segments only
 end type ocean_OBC_type
 
 integer :: id_clock_pass
@@ -134,6 +155,12 @@ character(len=40)  :: mod = "MOM_open_boundary" ! This module's name.
 contains
 
 !> Enables OBC module and reads configuration parameters
+!> This routine is called from MOM_initialize_fixed which
+!> occurs before the initialization of the vertical coordinate
+!> and ALE_init.  Therefore segment data are not fully initialized
+!> here. The remainder of the segment data are initialized in a
+!> later call to update_open_boundary_data
+
 subroutine open_boundary_config(G, param_file, OBC)
   type(dyn_horgrid_type),  intent(in)    :: G !< Ocean grid structure
   type(param_file_type),   intent(in)    :: param_file !< Parameter file handle
@@ -187,6 +214,8 @@ subroutine open_boundary_config(G, param_file, OBC)
                        "Unable to interpret "//segment_param_str//" = "//trim(segment_str))
       endif
     enddo
+
+    call initialize_segment_data(OBC, param_file)
   endif
 
   ! Safety check
@@ -202,6 +231,111 @@ subroutine open_boundary_config(G, param_file, OBC)
   endif
 
 end subroutine open_boundary_config
+
+subroutine initialize_segment_data(OBC, PF)
+  type(ocean_OBC_type), intent(inout) :: OBC
+  type(param_file_type), intent(in)   :: PF
+
+  integer :: num_segs,n,m,num_fields
+  character(len=256) :: segstr, filename
+  character(len=20)  :: segnam,suffix
+  character(len=32)  :: varnam, fieldname
+  real               :: value
+  integer, dimension(4) :: siz
+  integer            :: orient
+  character(len=32), dimension(MAX_OBC_FIELDS) :: fields  ! segment field names
+  character(len=128) :: inputdir
+  type(OBC_segment_type), pointer, dimension(:) :: OBC_segments ! pointer to segment type list
+  character(len=32)  :: remappingScheme
+  logical :: check_reconstruction, check_remapping, force_bounds_in_subcell
+
+  num_segs = OBC%number_of_segments
+
+  ! There is a problem with the order of the OBC initialization
+  ! with respect to ALE_init. Currently handling this by copying the
+  ! param file so that I can use it later in step_MOM in order to finish
+  ! initializing segments on the first step.
+
+
+  call get_param(PF, mod, "INPUTDIR", inputdir, default=".")
+  inputdir = slasher(inputdir)
+  
+  call get_param(PF, mod, "REMAPPING_SCHEME", remappingScheme, &
+          "This sets the reconstruction scheme used\n"//&
+          "for vertical remapping for all variables.\n"//&
+          "It can be one of the following schemes:\n"//&
+          trim(remappingSchemesDoc), default=remappingDefaultScheme)
+  call get_param(PF, mod, "FATAL_CHECK_RECONSTRUCTIONS", check_reconstruction, &
+          "If true, cell-by-cell reconstructions are checked for\n"//&
+          "consistency and if non-monotonicty or an inconsistency is\n"//&
+          "detected then a FATAL error is issued.", default=.false.)
+  call get_param(PF, mod, "FATAL_CHECK_REMAPPING", check_remapping, &
+          "If true, the results of remapping are checked for\n"//&
+          "conservation and new extrema and if an inconsistency is\n"//&
+          "detected then a FATAL error is issued.", default=.false.)
+  call get_param(PF, mod, "REMAP_BOUND_INTERMEDIATE_VALUES", force_bounds_in_subcell, &
+          "If true, the values on the intermediate grid used for remapping\n"//&
+          "are forced to be bounded, which might not be the case due to\n"//&
+          "round off.", default=.false.)
+  
+  allocate(OBC%remap_CS)
+  call initialize_remapping(OBC%remap_CS, remappingScheme, boundary_extrapolation = .false., &
+       check_reconstruction=check_reconstruction, &
+       check_remapping=check_remapping, force_bounds_in_subcell=force_bounds_in_subcell)
+
+
+  OBC_segments => OBC%OBC_segment_number(1:num_segs)
+
+  do n=1, num_segs
+     write(segnam,"('OBC_SEGMENT_',i3.3,'_DATA')") n
+     write(suffix,"('_segment_',i3.3)") n
+     call get_param(PF, mod, segnam, segstr)
+!     print *,'n, segstr=',n, trim(segstr)
+     call parse_segment_data_str(trim(segstr),fields=fields, num_fields=num_fields)
+
+     allocate(OBC_segments(n)%field(num_fields))
+
+     if (OBC_segments(n)%Flather) then
+        if (num_fields /= 3) call MOM_error(FATAL, &
+                   "MOM_open_boundary, initialize_segment_data: "//&
+                   "Need three inputs for Flather")
+        OBC_segments(n)%num_fields = 3 ! these are the input fields required for the Flather option
+                                       ! note that this is assuming that the inputs are coming in this order
+                                       ! and independent of the input param string . Needs cleanup - mjh
+        allocate(OBC_segments(n)%field_names(OBC_segments(n)%num_fields))
+        OBC_segments(n)%field_names(:)='None'
+        OBC_segments(n)%field_names(1)='UO'
+        OBC_segments(n)%field_names(2)='VO'
+        OBC_segments(n)%field_names(3)='ZOS'
+     endif
+
+     do m=1,num_fields
+        call parse_segment_data_str(segstr,var=trim(fields(m)), value=value, filenam=filename, fieldnam=fieldname)
+
+        OBC_segments(n)%field(m)%name = trim(fields(m))
+        filename = trim(inputdir)//trim(filename)
+        fieldname = trim(fieldname)//trim(suffix)
+!        print *,'varnam,filename,fieldname=',trim(fields(m)), ',',trim(filename),',', trim(fieldname)
+        call field_size(filename,fieldname,siz,no_domain=.true.)
+!        print *,'field size= ',siz
+        allocate(OBC_segments(n)%field(m)%buffer_src(siz(1),siz(2),siz(3)))
+        OBC_segments(n)%field(m)%fid = init_external_field(trim(filename),trim(fieldname))
+!        OBC_segments(n)%field(m)%fid = init_external_field(trim(filename),trim(fieldname))
+        if (siz(3) > 1) then
+          fieldname = 'dz_'//trim(fieldname)
+          call field_size(filename,fieldname,siz,no_domain=.true.)
+          allocate(OBC_segments(n)%field(m)%dz_src(siz(1),siz(2),siz(3)))
+          OBC_segments(n)%field(m)%nk_src=siz(3)
+          OBC_segments(n)%field(m)%fid_dz = init_external_field(trim(filename),trim(fieldname))
+        else
+          OBC_segments(n)%field(m)%nk_src=1
+        endif
+     enddo
+
+  enddo
+
+  return
+end subroutine initialize_segment_data
 
 !> Parse an OBC_SEGMENT_%%% string starting with "I=" and configure placement and type of OBC accordingly
 subroutine setup_u_point_obc(OBC, G, segment_str, l_seg)
@@ -511,6 +645,89 @@ subroutine parse_segment_str(ni_global, nj_global, segment_str, l, m, n, action_
   end function interpret_int_expr
 end subroutine parse_segment_str
 
+ subroutine parse_segment_data_str(segment_str, var, value, filenam, fieldnam, fields, num_fields, debug )
+   character(len=*), intent(in)             :: segment_str !< A string in form of "VAR1=file:foo1.nc(varnam1),VAR2=file:foo2.nc(varnam2),..."
+   character(len=*), intent(in),  optional  :: var         !< The name of the variable for which parameters are needed
+   character(len=*), intent(out), optional  :: filenam     !< The name of the input file if using "file" method
+   character(len=*), intent(out), optional  :: fieldnam    !< The name of the variable in the input file if using "file" method
+   real,             intent(out), optional  :: value       !< A constant value if using the "value" method
+   character(len=*), dimension(MAX_OBC_FIELDS), intent(out), optional :: fields   !< List of fieldnames for each segment
+   integer, intent(out), optional           :: num_fields
+   logical, intent(in), optional            :: debug
+   ! Local variables
+   character(len=128) :: word1, word2, word3, method
+   integer :: lword, nfields, n, m, orient
+   logical :: continue,dbg
+   character(len=32), dimension(MAX_OBC_FIELDS) :: flds
+
+   nfields=0
+   continue=.true.
+   dbg=.false.
+   if (PRESENT(debug)) dbg=debug
+
+   do while (continue)
+      word1 = extract_word(segment_str,',',nfields+1,debug=dbg)
+      if (trim(word1) == '') exit
+      nfields=nfields+1
+      word2 = extract_word(word1,'=',1,debug=dbg)
+!      print *,'nfields,field=',nfields,trim(word2)
+      flds(nfields) = trim(word2)
+   enddo
+
+   if (PRESENT(fields)) then
+     do n=1,nfields
+       fields(n) = flds(n)
+     enddo
+   endif
+
+   if (PRESENT(num_fields)) then
+      num_fields=nfields
+      return
+   endif
+
+   m=0
+   if (PRESENT(var)) then
+     do n=1,nfields
+!       print *, 'fields(n)= ',trim(flds(n))
+       if (trim(var)==trim(flds(n))) then
+          m=n
+          exit
+       endif
+     enddo
+     if (m==0) then
+!        print *,'Error finding field ',trim(var)
+        call abort()
+     endif
+
+    ! Process first word which will start with the fieldname
+     word3 = extract_word(segment_str,',',m,debug=dbg)
+     word1 = extract_word(word3,':',1,debug=dbg)
+!     if (trim(word1) == '') exit
+     word2 = extract_word(word1,'=',1,debug=dbg)
+     if (trim(word2) == trim(var)) then
+        method=trim(extract_word(word1,'=',2,debug=dbg))
+        lword=len_trim(method)
+        if (method(lword-3:lword) == 'file') then
+           ! raise an error id filename/fieldname not in argument list
+           word1 = extract_word(word3,':',2)
+           filenam = extract_word(word1,'(',1)
+           fieldnam = extract_word(word1,'(',2)
+           lword=len_trim(fieldnam)
+           fieldnam = fieldnam(1:lword-1)  ! remove trailing parenth
+!           print *,'in parser, filename,fieldname= ',trim(filenam), ',',trim(fieldnam)
+           value=-999.
+        elseif (method(lword-4:lword) == 'value') then
+           filenam = 'none'
+           fieldnam = 'none'
+           word1 = extract_word(word3,':',2)
+           lword=len_trim(word1)
+           read(word2(1:lword),*) value
+        endif
+      endif
+    endif
+
+ end subroutine parse_segment_data_str
+
 !> Initialize open boundary control structure
 subroutine open_boundary_init(G, param_file, OBC)
   type(ocean_grid_type), intent(in)    :: G !< Ocean grid structure
@@ -546,12 +763,12 @@ subroutine open_boundary_init(G, param_file, OBC)
 
 end subroutine open_boundary_init
 
-!> Query the state of open boundary module configuration
-logical function open_boundary_query(OBC, apply_specified_OBC, apply_Flather_OBC, apply_nudged_OBC)
+logical function open_boundary_query(OBC, apply_specified_OBC, apply_Flather_OBC, apply_nudged_OBC, use_OBC_segments)
   type(ocean_OBC_type), pointer     :: OBC !< Open boundary control structure
   logical, optional,    intent(in)  :: apply_specified_OBC !< If present, returns True if specified_*_BCs_exist_globally is true
   logical, optional,    intent(in)  :: apply_Flather_OBC   !< If present, returns True if Flather_*_BCs_exist_globally is true
   logical, optional,    intent(in)  :: apply_nudged_OBC    !< If present, returns True if nudged_*_BCs_exist_globally is true
+  logical, optional,    intent(in)  :: use_OBC_segments !< If present, returns True if using the newer obc segments
   open_boundary_query = .false.
   if (.not. associated(OBC)) return
   if (present(apply_specified_OBC)) open_boundary_query = OBC%specified_u_BCs_exist_globally .or. &
@@ -560,6 +777,8 @@ logical function open_boundary_query(OBC, apply_specified_OBC, apply_Flather_OBC
                                                         OBC%Flather_v_BCs_exist_globally
   if (present(apply_nudged_OBC)) open_boundary_query = OBC%nudged_u_BCs_exist_globally .or. &
                                                        OBC%nudged_v_BCs_exist_globally
+  if (present(use_OBC_segments) .and. OBC%number_of_segments > 0) open_boundary_query = .true.
+
 end function open_boundary_query
 
 !> Deallocate open boundary data
@@ -725,7 +944,7 @@ subroutine radiation_open_bdry_conds(OBC, u_new, u_old, v_new, v_old, &
                                      h_new, h_old, G)
   type(ocean_grid_type),                     intent(inout) :: G !< Ocean grid structure
   type(ocean_OBC_type),                      pointer       :: OBC !< Open boundary control structure
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(G)), intent(inout) :: u_new !< New u values on open boundaries 
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(G)), intent(inout) :: u_new !< New u values on open boundaries
   real, dimension(SZIB_(G),SZJ_(G),SZK_(G)), intent(in)    :: u_old !< Original unadjusted u
   real, dimension(SZI_(G),SZJB_(G),SZK_(G)), intent(inout) :: v_new !< New v values on open boundaries
   real, dimension(SZI_(G),SZJB_(G),SZK_(G)), intent(in)    :: v_old !< Original unadjusted v
@@ -1163,7 +1382,6 @@ subroutine set_Flather_data(OBC, tv, h, G, PF, tracer_Reg)
  !   allocate(OBC%ry_old_h(isd:ied,Jsd:Jed,nz))   ; OBC%ry_old_h(:,:,:) = 0.0
   endif
 
-
   if (associated(tv%T)) then
     allocate(OBC_T_u(IsdB:IedB,jsd:jed,nz)) ; OBC_T_u(:,:,:) = 0.0
     allocate(OBC_S_u(IsdB:IedB,jsd:jed,nz)) ; OBC_S_u(:,:,:) = 0.0
@@ -1297,6 +1515,70 @@ subroutine set_Flather_data(OBC, tv, h, G, PF, tracer_Reg)
 ! enddo ; enddo ; enddo
 
 end subroutine set_Flather_data
+
+subroutine update_OBC_segment_data(G, GV, OBC, h, Time)
+
+  type(ocean_grid_type),                     intent(inout) :: G !< Ocean grid structure
+  type(verticalGrid_type),                   intent(in)    :: GV
+  type(ocean_OBC_type),                      pointer       :: OBC !< Open boundary structure
+  real, dimension(SZI_(G),SZJ_(G), SZK_(G)), intent(inout) :: h !< Thickness
+  type(time_type),                           intent(in)    :: Time
+  ! Local variables
+
+  integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed
+  integer :: IsdB, IedB, JsdB, JedB, n, m
+  character(len=40)  :: mod = "set_OBC_segment_data" ! This subroutine's name.
+  character(len=200) :: filename, OBC_file, inputdir ! Strings for file/path
+  type(OBC_segment_type), pointer :: segment
+  integer, dimension(4) :: siz  
+  integer :: ni_src, nj_src  ! number of src gridpoints along the segments
+  
+                               
+  is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
+  isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
+  IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
+
+   do n = 1, OBC%number_of_segments
+      segment => OBC%OBC_segment_number(n)
+      do m = 1,segment%num_fields
+           ! move this to segment initialization
+           if (.not.associated(segment%field(m)%buffer_dst)) then
+              siz(1)=size(segment%field(m)%buffer_src,1)
+              siz(2)=size(segment%field(m)%buffer_src,2)
+              if (segment%field(m)%nk_src == 1) then
+                 allocate(segment%field(m)%buffer_dst(siz(1),siz(2),GV%ke))
+              else
+                 allocate(segment%field(m)%buffer_dst(siz(1),siz(2),1))
+              endif
+              segment%field(m)%buffer_dst(:,:,:)=0.0
+           endif
+           ! read source data interpolated to the current model time
+           call time_interp_external(segment%field(m)%fid,Time, segment%field(m)%buffer_src)
+
+           nj_src=size(segment%field(m)%buffer_dst,2)
+           ni_src=size(segment%field(m)%buffer_dst,1)
+
+           if (segment%field(m)%nk_src > 1) then
+             call time_interp_external(segment%field(m)%fid_dz,Time, segment%field(m)%dz_src)
+             do j=1,nj_src
+                do i=1,ni_src
+                  ! Using the h remapping approach
+                  ! Pretty sure we need to check for source/target grid consistency here
+                  segment%field(m)%buffer_dst(i,j,:)=0.0  ! initialize remap destination buffer
+                  if (G%mask2dT(i,j)>0.) then
+                     call remapping_core_h(segment%field(m)%nk_src,segment%field(m)%dz_src(i,j,:),&
+                           segment%field(m)%buffer_src(i,j,:),GV%ke, h(i,j,:),&
+                           segment%field(m)%buffer_dst(i,j,:),OBC%remap_CS)
+                  endif
+                enddo
+             enddo
+           else  ! 2d data
+             segment%field(m)%buffer_dst(:,:,1)=segment%field(m)%buffer_src(:,:,1)  ! initialize remap destination buffer
+           endif
+      enddo ! end field loop
+    enddo
+
+end subroutine update_OBC_segment_data
 
 !> \namespace mom_open_boundary
 !! This module implements some aspects of internal open boundary

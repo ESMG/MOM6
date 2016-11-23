@@ -222,17 +222,24 @@ end function extractWord
 !> Returns the string corresponding to the nth word in the argument
 !! or "" if the string is not long enough. Words are delineated
 !! by the mandatory separators argument.
-character(len=120) function extract_word(string, separators, n)
+character(len=120) function extract_word(string, separators, n, debug)
   character(len=*),   intent(in) :: string     !< String to scan
   character(len=*),   intent(in) :: separators !< Characters to use for delineation
   integer,            intent(in) :: n          !< Number of word to extract
+  logical,            intent(in), optional :: debug
+
+
   ! Local variables
   integer :: ns, i, b, e, nw
-  logical :: lastCharIsSeperator
+  logical :: lastCharIsSeperator,dbg
   extract_word = ''
+  dbg=.false.
+  if (PRESENT(debug)) dbg=debug
   lastCharIsSeperator = .true.
   ns = len_trim(string)
   i = 0; b=0; e=0; nw=0;
+  if (dbg) print *, 'string to analyze= ',trim(string)
+
   do while (i<ns)
     i = i+1
     if (lastCharIsSeperator) then ! search for end of word
@@ -249,13 +256,17 @@ character(len=120) function extract_word(string, separators, n)
         e = i-1 ! Previous character is end of word
         nw = nw+1
         if (nw==n) then
-          extract_word = trim(string(b:e))
+           if (dbg) print *, 'nw,n= ',nw,n,' b,e= ',b,e,' result= ',trim(string(b:e))
+           extract_word = trim(string(b:e))
           return
         endif
       endif
     endif
   enddo
+
+  if (dbg) print *, 'nw,n= ',nw,n,' b,e= ',b,e,' result= ',trim(string(b:e))
   if (b<=ns .and. nw==n-1) extract_word = trim(string(b:ns))
+  if (n<nw+1) extract_word = ''
 end function extract_word
 
 !> Returns string with all spaces removed.

@@ -4,7 +4,7 @@ module MOM
 ! This file is part of MOM6. See LICENSE.md for the license.
 
 use MOM_variables, only : vertvisc_type
-use MOM_open_boundary, only : ocean_OBC_type
+use MOM_open_boundary, only : ocean_OBC_type, open_boundary_query, update_OBC_segment_data
 
 ! A Structure with pointers to forcing fields to drive MOM;
 ! all fluxes are positive downward.
@@ -600,6 +600,11 @@ subroutine step_MOM(fluxes, state, Time_start, time_interval, CS)
   tot_wt_ssh = 0.0
   do j=js,je ; do i=is,ie ; CS%ave_ssh(i,j) = 0.0 ; ssh(i,j) = CS%missing; enddo ; enddo
 
+  ! update OBC external data at the beginning of the timestamp (better T+dt/2?)
+  if (open_boundary_query(CS%OBC,use_OBC_segments=.true.)) then
+    call update_OBC_segment_data(G,GV,CS%OBC,h,Time_start)
+  endif
+  
   if (associated(CS%VarMix)) then
     call enable_averaging(time_interval, Time_start+set_time(int(time_interval)), &
                           CS%diag)
