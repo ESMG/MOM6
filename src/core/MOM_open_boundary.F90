@@ -1827,7 +1827,7 @@ subroutine update_OBC_segment_data(G, GV, OBC, tv, h, Time)
   integer :: ishift, jshift  ! offsets for staggered locations
   real, dimension(:,:), pointer :: seg_vel => NULL()  ! pointer to segment velocity array
   real, dimension(:,:), pointer :: seg_trans => NULL()  ! pointer to segment transport array
-  real, dimension(:,:,:), allocatable :: tmp_buffer
+!  real, dimension(:,:,:), allocatable :: tmp_buffer
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
@@ -1920,25 +1920,26 @@ subroutine update_OBC_segment_data(G, GV, OBC, tv, h, Time)
           endif
         endif
         ! read source data interpolated to the current model time
-        if (siz(1)==1) then
-          allocate(tmp_buffer(1,nj_seg*2+1,segment%field(m)%nk_src))  ! segment data is currrently on supergrid
-        else
-          allocate(tmp_buffer(ni_seg*2+1,1,segment%field(m)%nk_src))  ! segment data is currrently on supergrid
-        endif
+!        if (siz(1)==1) then
+!          allocate(tmp_buffer(1,nj_seg*2+1,segment%field(m)%nk_src))  ! segment data is currrently on supergrid
+!        else
+!          allocate(tmp_buffer(ni_seg*2+1,1,segment%field(m)%nk_src))  ! segment data is currrently on supergrid
+!        endif
 
-        call time_interp_external(segment%field(m)%fid,Time, tmp_buffer)
-        if (siz(1)==1) then
-          segment%field(m)%buffer_src(is_obc,:,:)=tmp_buffer(1,2*(js_obc+G%jdg_offset)-1:2*(je_obc+G%jdg_offset)-1:2,:)
-        else
-          segment%field(m)%buffer_src(:,js_obc,:)=tmp_buffer(2*(is_obc+G%idg_offset)-1:2*(ie_obc+G%idg_offset)-1:2,1,:)
-        endif
+        call time_interp_external(segment%field(m)%fid,Time, segment%field(m)%buffer_src)
+!        if (siz(1)==1) then
+!          segment%field(m)%buffer_src(is_obc,:,:)=tmp_buffer(1,2*(js_obc+G%jdg_offset)-1:2*(je_obc+G%jdg_offset)-1:2,:)
+!        else
+!          segment%field(m)%buffer_src(:,js_obc,:)=tmp_buffer(2*(is_obc+G%idg_offset)-1:2*(ie_obc+G%idg_offset)-1:2,1,:)
+!        endif
         if (segment%field(m)%nk_src > 1) then
-          call time_interp_external(segment%field(m)%fid_dz,Time, tmp_buffer)
-          if (siz(1)==1) then
-            segment%field(m)%dz_src(is_obc,:,:)=tmp_buffer(1,2*(js_obc+G%jdg_offset)-1:2*(je_obc+G%jdg_offset)-1:2,:)
-          else
-            segment%field(m)%dz_src(:,js_obc,:)=tmp_buffer(2*(is_obc+G%idg_offset)-1:2*(ie_obc+G%idg_offset)-1:2,1,:)
-          endif
+!          call time_interp_external(segment%field(m)%fid_dz,Time, tmp_buffer)
+          call time_interp_external(segment%field(m)%fid_dz,Time, segment%field(m)%dz_src)
+!          if (siz(1)==1) then
+!            segment%field(m)%dz_src(is_obc,:,:)=tmp_buffer(1,2*(js_obc+G%jdg_offset)-1:2*(je_obc+G%jdg_offset)-1:2,:)
+!          else
+!            segment%field(m)%dz_src(:,js_obc,:)=tmp_buffer(2*(is_obc+G%idg_offset)-1:2*(ie_obc+G%idg_offset)-1:2,1,:)
+!          endif
           do j=js_obc,je_obc
             do i=is_obc,ie_obc
 
@@ -1956,7 +1957,7 @@ subroutine update_OBC_segment_data(G, GV, OBC, tv, h, Time)
         else  ! 2d data
           segment%field(m)%buffer_dst(:,:,1)=segment%field(m)%buffer_src(:,:,1)  ! initialize remap destination buffer
         endif
-        deallocate(tmp_buffer)
+!        deallocate(tmp_buffer)
       else ! fid <= 0
         if (.not. ASSOCIATED(segment%field(m)%buffer_dst)) then
           allocate(segment%field(m)%buffer_dst(is_obc:ie_obc,js_obc:je_obc,G%ke))
