@@ -20,7 +20,8 @@ use MOM_io, only : vardesc, var_desc, MOM_read_data, slasher
 use MOM_open_boundary, only : ocean_OBC_type, OBC_SIMPLE, OBC_NONE, open_boundary_query
 use MOM_open_boundary, only : OBC_DIRECTION_E, OBC_DIRECTION_W
 use MOM_open_boundary, only : OBC_DIRECTION_N, OBC_DIRECTION_S, OBC_segment_type
-use MOM_restart, only : register_restart_field, query_initialized, MOM_restart_CS
+use MOM_restart, only : register_restart_field, register_restart_pair
+use MOM_restart, only : query_initialized, MOM_restart_CS
 use MOM_tidal_forcing, only : tidal_forcing_sensitivity, tidal_forcing_CS
 use MOM_time_manager, only : time_type, real_to_time, operator(+), operator(-)
 use MOM_unit_scaling, only : unit_scale_type
@@ -86,7 +87,7 @@ type, private :: BT_OBC_type
   !>@{ Index ranges for the open boundary conditions
   integer :: is_u_obc, ie_u_obc, js_u_obc, je_u_obc
   integer :: is_v_obc, ie_v_obc, js_v_obc, je_v_obc
-  !!@}
+  !>@}
   logical :: is_alloced = .false. !< True if BT_OBC is in use and has been allocated
 
   type(group_pass_type) :: pass_uv   !< Structure for group halo pass
@@ -273,10 +274,10 @@ type, public :: barotropic_CS ; private
   type(time_type), pointer :: Time  => NULL() !< A pointer to the ocean models clock.
   type(diag_ctrl), pointer :: diag => NULL()  !< A structure that is used to regulate
                              !! the timing of diagnostic output.
-  type(MOM_domain_type), pointer :: BT_Domain => NULL()
+  type(MOM_domain_type), pointer :: BT_Domain => NULL()  !< Barotropic MOM domain
   type(hor_index_type), pointer :: debug_BT_HI => NULL() !< debugging copy of horizontal index_type
-  type(tidal_forcing_CS), pointer :: tides_CSp => NULL()
-  logical :: module_is_initialized = .false.
+  type(tidal_forcing_CS), pointer :: tides_CSp => NULL() !< Control structure for tides
+  logical :: module_is_initialized = .false.  !< If true, module has been initialized
 
   integer :: isdw !< The lower i-memory limit for the wide halo arrays.
   integer :: iedw !< The upper i-memory limit for the wide halo arrays.
@@ -301,6 +302,7 @@ type, public :: barotropic_CS ; private
   integer :: id_visc_rem_u = -1, id_visc_rem_v = -1, id_eta_cor = -1
   integer :: id_ubt = -1, id_vbt = -1, id_eta_bt = -1, id_ubtav = -1, id_vbtav = -1
   integer :: id_ubt_st = -1, id_vbt_st = -1, id_eta_st = -1
+  integer :: id_ubtdt = -1, id_vbtdt = -1
   integer :: id_ubt_hifreq = -1, id_vbt_hifreq = -1, id_eta_hifreq = -1
   integer :: id_uhbt_hifreq = -1, id_vhbt_hifreq = -1, id_eta_pred_hifreq = -1
   integer :: id_gtotn = -1, id_gtots = -1, id_gtote = -1, id_gtotw = -1
@@ -312,7 +314,7 @@ type, public :: barotropic_CS ; private
   integer :: id_BTC_FA_v_NN = -1, id_BTC_FA_v_N0 = -1, id_BTC_FA_v_S0 = -1, id_BTC_FA_v_SS = -1
   integer :: id_BTC_vbt_NN = -1, id_BTC_vbt_SS = -1
   integer :: id_uhbt0 = -1, id_vhbt0 = -1
-  !!@}
+  !>@}
 
 end type barotropic_CS
 
@@ -360,14 +362,14 @@ end type local_BT_cont_v_type
 type, private :: memory_size_type
   !>@{ Currently active memory limits
   integer :: isdw, iedw, jsdw, jedw ! The memory limits of the wide halo arrays.
-  !!@}
+  !>@}
 end type memory_size_type
 
 !>@{ CPU time clock IDs
 integer :: id_clock_sync=-1, id_clock_calc=-1
 integer :: id_clock_calc_pre=-1, id_clock_calc_post=-1
 integer :: id_clock_pass_step=-1, id_clock_pass_pre=-1, id_clock_pass_post=-1
-!!@}
+!>@}
 
 !>@{ Enumeration values for various schemes
 integer, parameter :: HARMONIC        = 1
@@ -379,7 +381,7 @@ character*(20), parameter :: HYBRID_STRING = "HYBRID"
 character*(20), parameter :: HARMONIC_STRING = "HARMONIC"
 character*(20), parameter :: ARITHMETIC_STRING = "ARITHMETIC"
 character*(20), parameter :: BT_CONT_STRING = "FROM_BT_CONT"
-!!@}
+!>@}
 
 contains
 
@@ -475,10 +477,14 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
                 ! sums less than one due to viscous losses.  Nondimensional.
   real, dimension(SZIB_(G),SZJ_(G)) :: &
     av_rem_u, &   ! The weighted average of visc_rem_u, nondimensional.
-    tmp_u         ! A temporary array at u points.
+    tmp_u, &      ! A temporary array at u points.
+    ubt_st, &     ! The zonal barotropic velocity at the start of timestep [L T-1 ~> m s-1].
+    ubt_dt        ! The zonal barotropic velocity tendency [L T-2 ~> m s-2].
   real, dimension(SZI_(G),SZJB_(G)) :: &
     av_rem_v, &   ! The weighted average of visc_rem_v, nondimensional.
-    tmp_v         ! A temporary array at v points.
+    tmp_v, &      ! A temporary array at v points.
+    vbt_st, &     ! The meridional barotropic velocity at the start of timestep [L T-1 ~> m s-1].
+    vbt_dt        ! The meridional barotropic velocity tendency [L T-2 ~> m s-2].
   real, dimension(SZI_(G),SZJ_(G)) :: &
     e_anom        ! The anomaly in the sea surface height or column mass
                   ! averaged between the beginning and end of the time step,
@@ -1478,9 +1484,8 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       dyn_coef_max = CS%const_dyn_psurf * max(0.0, 1.0 - dtbt**2 * Idt_max2) / &
                      (dtbt**2 * H_eff_dx2)
 
-      ! ice_strength has units of [L2 Z-1 T-2 ~> m s-2]. rigidity_ice_[uv] has units of [m3 s-1].
-      ice_strength = US%m_to_L**4*US%Z_to_m*US%T_to_s* &
-                     ((forces%rigidity_ice_u(I,j) + forces%rigidity_ice_u(I-1,j)) + &
+      ! ice_strength has units of [L2 Z-1 T-2 ~> m s-2]. rigidity_ice_[uv] has units of [L4 Z-1 T-1 ~> m3 s-1].
+      ice_strength = ((forces%rigidity_ice_u(I,j) + forces%rigidity_ice_u(I-1,j)) + &
                       (forces%rigidity_ice_v(i,J) + forces%rigidity_ice_v(i,J-1))) / &
                       (CS%ice_strength_length**2 * dtbt)
 
@@ -1536,11 +1541,26 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     if (.not. use_BT_cont) then
       call uvchksum("BT Dat[uv]", Datu, Datv, CS%debug_BT_HI, haloshift=1, scale=US%L_to_m*GV%H_to_m)
     endif
-    call uvchksum("BT wt_[uv]", wt_u, wt_v, G%HI, 0, .true., .true.)
-    call uvchksum("BT frhat[uv]", CS%frhatu, CS%frhatv, G%HI, 0, .true., .true.)
+    call uvchksum("BT wt_[uv]", wt_u, wt_v, G%HI, haloshift=0, &
+                  symmetric=.true., omit_corners=.true., scalar_pair=.true.)
+    call uvchksum("BT frhat[uv]", CS%frhatu, CS%frhatv, G%HI, haloshift=0, &
+                  symmetric=.true., omit_corners=.true., scalar_pair=.true.)
     call uvchksum("BT bc_accel_[uv]", bc_accel_u, bc_accel_v, G%HI, haloshift=0, scale=US%L_T2_to_m_s2)
-    call uvchksum("BT IDat[uv]", CS%IDatu, CS%IDatv, G%HI, haloshift=0, scale=US%m_to_Z)
-    call uvchksum("BT visc_rem_[uv]", visc_rem_u, visc_rem_v, G%HI, haloshift=1)
+    call uvchksum("BT IDat[uv]", CS%IDatu, CS%IDatv, G%HI, haloshift=0, &
+                  scale=US%m_to_Z, scalar_pair=.true.)
+    call uvchksum("BT visc_rem_[uv]", visc_rem_u, visc_rem_v, G%HI, &
+                  haloshift=1, scalar_pair=.true.)
+  endif
+
+  if (CS%id_ubtdt > 0) then
+    do j=js-1,je+1 ; do I=is-1,ie
+      ubt_st(I,j) = ubt(I,j)
+    enddo ; enddo
+  endif
+  if (CS%id_vbtdt > 0) then
+    do J=js-1,je ; do i=is-1,ie+1
+      vbt_st(i,J) = vbt(i,J)
+    enddo ; enddo
   endif
 
   if (query_averaging_enabled(CS%diag)) then
@@ -2296,6 +2316,19 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
       enddo ; enddo
       call post_data(CS%id_Corv_bt, Corv_bt_sum(isd:ied,JsdB:JedB), CS%diag)
     endif
+    if (CS%id_ubtdt > 0) then
+      do j=js,je ; do I=is-1,ie
+        ubt_dt(I,j) = (ubt_wtd(I,j) - ubt_st(I,j))*Idt
+      enddo ; enddo
+      call post_data(CS%id_ubtdt, ubt_dt(IsdB:IedB,jsd:jed), CS%diag)
+    endif
+    if (CS%id_vbtdt > 0) then
+      do J=js-1,je ; do i=is,ie
+        vbt_dt(i,J) = (vbt_wtd(i,J) - vbt_st(i,J))*Idt
+      enddo ; enddo
+      call post_data(CS%id_vbtdt, vbt_dt(isd:ied,JsdB:JedB), CS%diag)
+    endif
+
     if (CS%id_ubtforce > 0) call post_data(CS%id_ubtforce, BT_force_u(IsdB:IedB,jsd:jed), CS%diag)
     if (CS%id_vbtforce > 0) call post_data(CS%id_vbtforce, BT_force_v(isd:ied,JsdB:JedB), CS%diag)
     if (CS%id_uaccel > 0) call post_data(CS%id_uaccel, u_accel_bt(IsdB:IedB,jsd:jed), CS%diag)
@@ -2540,9 +2573,7 @@ subroutine apply_velocity_OBCs(OBC, ubt, vbt, uhbt, vhbt, ubt_trans, vbt_trans, 
   integer :: i, j, is, ie, js, je
   real, dimension(SZIB_(G),SZJB_(G)) :: grad
   real, parameter :: eps = 1.0e-20
-  real :: rx_max, ry_max ! coefficients for radiation
   is = G%isc-halo ; ie = G%iec+halo ; js = G%jsc-halo ; je = G%jec+halo
-  rx_max = OBC%rx_max ; ry_max = OBC%rx_max
 
   if (BT_OBC%apply_u_OBCs) then
     do j=js,je ; do I=is-1,ie ; if (OBC%segnum_u(I,j) /= OBC_NONE) then
@@ -3115,9 +3146,13 @@ subroutine btcalc(h, G, GV, CS, h_u, h_v, may_use_default, OBC)
   enddo ; endif
 
   if (CS%debug) then
-    call uvchksum("btcalc frhat[uv]", CS%frhatu, CS%frhatv, G%HI, 0, .true., .true.)
+    call uvchksum("btcalc frhat[uv]", CS%frhatu, CS%frhatv, G%HI, &
+                  haloshift=0, symmetric=.true., omit_corners=.true., &
+                  scalar_pair=.true.)
     if (present(h_u) .and. present(h_v)) &
-      call uvchksum("btcalc h_[uv]", h_u, h_v, G%HI, 0, .true., .true., scale=GV%H_to_m)
+      call uvchksum("btcalc h_[uv]", h_u, h_v, G%HI, haloshift=0, &
+                    symmetric=.true., omit_corners=.true., scale=GV%H_to_m, &
+                    scalar_pair=.true.)
     call hchksum(h, "btcalc h",G%HI, haloshift=1, scale=GV%H_to_m)
   endif
 
@@ -4237,6 +4272,7 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
     CS%debug_BT_HI%IedB=CS%iedw
     CS%debug_BT_HI%JsdB=CS%jsdw-1
     CS%debug_BT_HI%JedB=CS%jedw
+    CS%debug_BT_HI%turns = G%HI%turns
   endif
 
   ! IareaT, IdxCu, and IdyCv need to be allocated with wide halos.
@@ -4372,6 +4408,10 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
       'Barotropic zonal acceleration from baroclinic terms', 'm s-2', conversion=US%L_T2_to_m_s2)
   CS%id_vbtforce = register_diag_field('ocean_model', 'vbtforce', diag%axesCv1, Time, &
       'Barotropic meridional acceleration from baroclinic terms', 'm s-2', conversion=US%L_T2_to_m_s2)
+  CS%id_ubtdt = register_diag_field('ocean_model', 'ubt_dt', diag%axesCu1, Time, &
+      'Barotropic zonal acceleration', 'm s-2', conversion=US%L_T2_to_m_s2)
+  CS%id_vbtdt = register_diag_field('ocean_model', 'vbt_dt', diag%axesCv1, Time, &
+      'Barotropic meridional acceleration', 'm s-2', conversion=US%L_T2_to_m_s2)
 
   CS%id_eta_bt = register_diag_field('ocean_model', 'eta_bt', diag%axesT1, Time, &
       'Barotropic end SSH', thickness_units, conversion=GV%H_to_m)
@@ -4609,6 +4649,7 @@ subroutine register_barotropic_restarts(HI, GV, param_file, CS, restart_CS)
   type(vardesc) :: vd(3)
   real :: slow_rate
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
+
   isd = HI%isd ; ied = HI%ied ; jsd = HI%jsd ; jed = HI%jed
   IsdB = HI%IsdB ; IedB = HI%IedB ; JsdB = HI%JsdB ; JedB = HI%JedB
 
@@ -4630,8 +4671,7 @@ subroutine register_barotropic_restarts(HI, GV, param_file, CS, restart_CS)
                 hor_grid='u', z_grid='1')
   vd(3) = var_desc("vbtav","m s-1","Time mean barotropic meridional velocity",&
                 hor_grid='v', z_grid='1')
-  call register_restart_field(CS%ubtav, vd(2), .false., restart_CS)
-  call register_restart_field(CS%vbtav, vd(3), .false., restart_CS)
+  call register_restart_pair(CS%ubtav, CS%vbtav, vd(2), vd(3), .false., restart_CS)
 
   vd(2) = var_desc("ubt_IC", "m s-1", &
               longname="Next initial condition for the barotropic zonal velocity", &
@@ -4639,8 +4679,7 @@ subroutine register_barotropic_restarts(HI, GV, param_file, CS, restart_CS)
   vd(3) = var_desc("vbt_IC", "m s-1", &
               longname="Next initial condition for the barotropic meridional velocity",&
               hor_grid='v', z_grid='1')
-  call register_restart_field(CS%ubt_IC, vd(2), .false., restart_CS)
-  call register_restart_field(CS%vbt_IC, vd(3), .false., restart_CS)
+  call register_restart_pair(CS%ubt_IC, CS%vbt_IC, vd(2), vd(3), .false., restart_CS)
 
   if (GV%Boussinesq) then
     vd(2) = var_desc("uhbt_IC", "m3 s-1", &
@@ -4657,8 +4696,7 @@ subroutine register_barotropic_restarts(HI, GV, param_file, CS, restart_CS)
                 longname="Next initial condition for the barotropic meridional transport",&
                 hor_grid='v', z_grid='1')
   endif
-  call register_restart_field(CS%uhbt_IC, vd(2), .false., restart_CS)
-  call register_restart_field(CS%vhbt_IC, vd(3), .false., restart_CS)
+  call register_restart_pair(CS%uhbt_IC, CS%vhbt_IC, vd(2), vd(3), .false., restart_CS)
 
   call register_restart_field(CS%dtbt, "DTBT", .false., restart_CS, &
                               longname="Barotropic timestep", units="seconds")
