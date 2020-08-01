@@ -62,6 +62,7 @@ public update_segment_tracer_reservoirs
 public update_OBC_ramp
 public rotate_OBC_config
 public rotate_OBC_init
+public initialize_segment_data
 
 integer, parameter, public :: OBC_NONE = 0      !< Indicates the use of no open boundary
 integer, parameter, public :: OBC_SIMPLE = 1    !< Indicates the use of a simple inflow open boundary
@@ -497,7 +498,7 @@ subroutine open_boundary_config(G, US, param_file, OBC)
     enddo
 
     !    if (open_boundary_query(OBC, needs_ext_seg_data=.true.)) &
-    call initialize_segment_data(G, OBC, param_file)
+ !   call initialize_segment_data(G, OBC, param_file)
 
     if (open_boundary_query(OBC, apply_open_OBC=.true.)) then
       call get_param(param_file, mdl, "OBC_RADIATION_MAX", OBC%rx_max, &
@@ -564,7 +565,7 @@ end subroutine open_boundary_config
 subroutine initialize_segment_data(G, OBC, PF)
   use mpp_mod, only : mpp_pe, mpp_set_current_pelist, mpp_get_current_pelist,mpp_npes
 
-  type(dyn_horgrid_type), intent(in)    :: G   !< Ocean grid structure
+  type(ocean_grid_type), intent(in)    :: G   !< Ocean grid structure
   type(ocean_OBC_type),   intent(inout) :: OBC !< Open boundary control structure
   type(param_file_type),  intent(in)    :: PF  !< Parameter file handle
 
