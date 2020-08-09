@@ -70,12 +70,12 @@ type, public :: opacity_CS ; private
   !>@{ Diagnostic IDs
   integer :: id_sw_pen = -1, id_sw_vis_pen = -1
   integer, pointer :: id_opacity(:) => NULL()
-  !!@}
+  !>@}
 end type opacity_CS
 
 !>@{ Coded integers to specify the opacity scheme
 integer, parameter :: NO_SCHEME = 0, MANIZZA_05 = 1, MOREL_88 = 2, SINGLE_EXP = 3, DOUBLE_EXP = 4
-!!@}
+!>@}
 
 character*(10), parameter :: MANIZZA_05_STRING = "MANIZZA_05" !< String to specify the opacity scheme
 character*(10), parameter :: MOREL_88_STRING   = "MOREL_88"   !< String to specify the opacity scheme
@@ -1048,7 +1048,7 @@ subroutine opacity_init(Time, G, GV, US, param_file, diag, CS, optics)
 
   call get_param(param_file, mdl, "DEFAULT_2018_ANSWERS", default_2018_answers, &
                  "This sets the default value for the various _2018_ANSWERS parameters.", &
-                 default=.true.)
+                 default=.false.)
   call get_param(param_file, mdl, "OPTICS_2018_ANSWERS", optics%answers_2018, &
                  "If true, use the order of arithmetic and expressions that recover the "//&
                  "answers from the end of 2018.  Otherwise, use updated expressions for "//&

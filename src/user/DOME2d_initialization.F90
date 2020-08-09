@@ -257,9 +257,9 @@ subroutine DOME2d_initialize_temperature_salinity ( T, S, h, G, GV, param_file, 
                  default=0.3, do_not_log=.true.)
   call get_param(param_file, mdl, "DOME2D_SHELF_DEPTH", dome2d_depth_bay, &
                  default=0.2, do_not_log=.true.)
-  call get_param(param_file, mdl,"S_REF",S_ref,'Reference salinity',units='1e-3', &
-                fail_if_missing=.not.just_read, do_not_log=just_read)
-  call get_param(param_file, mdl,"T_REF",T_ref,'Refernce temperature',units='C', &
+  call get_param(param_file, mdl, "S_REF", S_ref, 'Reference salinity', &
+                 default=35.0, units='1e-3', do_not_log=just_read)
+  call get_param(param_file, mdl,"T_REF",T_ref,'Reference temperature', units='degC', &
                 fail_if_missing=.not.just_read, do_not_log=just_read)
   call get_param(param_file, mdl,"S_RANGE",S_range,'Initial salinity range', &
                 units='1e-3', default=2.0, do_not_log=just_read)
@@ -365,7 +365,6 @@ subroutine DOME2d_initialize_sponges(G, GV, US, tv, param_file, use_ALE, CSp, AC
   ! Local variables
   real :: T(SZI_(G),SZJ_(G),SZK_(G))   ! A temporary array for temp [degC]
   real :: S(SZI_(G),SZJ_(G),SZK_(G))   ! A temporary array for salt [ppt]
-  real :: RHO(SZI_(G),SZJ_(G),SZK_(G)) ! A temporary array for RHO [kg m-3]
   real :: h(SZI_(G),SZJ_(G),SZK_(G))   ! A temporary array for thickness [H ~> m or kg m-2].
   real :: eta(SZI_(G),SZJ_(G),SZK_(G)+1) ! A temporary array for thickness [Z ~> m]
   real :: Idamp(SZI_(G),SZJ_(G))       ! The inverse damping rate [T-1 ~> s-1].
@@ -416,10 +415,10 @@ subroutine DOME2d_initialize_sponges(G, GV, US, tv, param_file, use_ALE, CSp, AC
                  default=0.3, do_not_log=.true.)
   call get_param(param_file, mdl, "DOME2D_SHELF_DEPTH", dome2d_depth_bay, &
                  default=0.2, do_not_log=.true.)
-  call get_param(param_file, mdl,"S_REF",S_ref)
-  call get_param(param_file, mdl,"T_REF",T_ref)
-  call get_param(param_file, mdl,"S_RANGE",S_range,default=2.0)
-  call get_param(param_file, mdl,"T_RANGE",T_range,default=0.0)
+  call get_param(param_file, mdl, "S_REF", S_ref, default=35.0)
+  call get_param(param_file, mdl, "T_REF", T_ref)
+  call get_param(param_file, mdl, "S_RANGE", S_range, default=2.0)
+  call get_param(param_file, mdl, "T_RANGE", T_range, default=0.0)
 
 
   ! Set the inverse damping rate as a function of position

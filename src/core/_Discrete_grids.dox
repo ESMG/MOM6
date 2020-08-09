@@ -2,7 +2,51 @@
 
 \brief Discrete Horizontal and Vertical Grids
 
+The placement of model variables on the horizontal C-grid is illustrated here:
+
+\image html Arakawa_C_grid.png MOM6 uses an Arakawa C grid staggering of variables with
+a North-East indexing convention.
+
+Scalars are located at the \f$h\f$-points, velocities are staggered such that
+\f$u\f$-points and \f$v\f$-points are not co-located, and vorticities
+are located at \f$q\f$-points. The indexing for points (\f$i,j\f$) in
+the logically-rectangular domain is such that \f$i\f$ increases in
+the \f$x\f$ direction (eastward for spherical polar coordinates), and
+\f$j\f$ increases in the \f$y\f$ direction (northward for spherical polar
+coordinates). A \f$q\f$-point with indices (\f$i,j\f$) lies to the upper
+right (northeast) of the \f$h\f$-point with the same indices. The index
+for the viertical dimension \f$k\f$ increases with depth, although the
+vertical coordinate \f$z\f$, measured from the mean surface level \f$z =
+0\f$, decreases with depth.
+
+When the horizontal grid is generated, it is actually computed on the
+``supergrid'' at twice the nominal resolution of the model. The grid file
+contains the grid metrics and the areas of this fine grid. The model
+then decomposes it into the four staggered grids, along with computing
+the grid metrics as shown here:
+
+\image html Grid_metrics.png The grid metrics around both \f$h\f$-points and \f$q\f$-points.
+
+The model carries both the metrics as well as their inverses, for instance,
+IdyT = 1/dyT. There are also the areas and the inverse areas for all four grid
+locations:
+
+\f[
+\mbox{areaCu}_{(i,j} &= dxCu_{i,j} * dy\_Cu_{i,j} \\
+areaCv_{(i,j} &= dx\_Cv_{i,j} * dyCv_{i,j} \\
+IareaCu_{(i,j} &= 1 / areaCu_{i,j} \\
+IareaCv_{(i,j} &= 1 / areaCv_{i,j}
+\f]
+
+while areaT and areaBu are the sum of the four areas from the supergrid
+surrounding each h-point and each q-point, respectively.
+
 \section horizontal_grids Horizontal grids
+
+
+The grid metrics are available in the grid structure as shown here:
+
+\image html Grid_metrics.png
 
 \section vertical_grids Vertical grids
 
