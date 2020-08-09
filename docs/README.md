@@ -1,6 +1,6 @@
 # Generated documentation
 
-We use [Doxygen](http://www.doxygen.org/) for in-code documentation of APIs (i.e. arguments to subroutines/functions and 
+We use [Doxygen](http://www.doxygen.org/) for in-code documentation of APIs (i.e. arguments to subroutines/functions and
 members of types).
 The guide for using doxygen in MOM6 is hosted on the [MOM6 developer's wiki](https://github.com/NOAA-GFDL/MOM6/wiki/Doxygen).
 
@@ -34,7 +34,7 @@ The doxygen generated HTML can be obtained locally (and slightly more quickly) w
 ```bash
 make nortd SPHINXBUILD=false
 ```
-which will generate html in `docs/APIs/`. Start at `docs/APIs/index.html`. If doxygen is not already available this will install a 
+which will generate html in `docs/APIs/`. Start at `docs/APIs/index.html`. If doxygen is not already available this will install a
 local copy of doxygen.
 
 ## Dependencies
@@ -93,7 +93,8 @@ The value `node.text` can be `None` when passed to `visit_image`.  Edit `site-pa
 
 ### MathJax
 
-Only one `\label` is supported per large formula block surrounded by `\[` and `\]`.
+Only one `\label` is supported per large formula block surrounded by `\[` and `\]`.  At this point, we are not
+certain the references from embedded formulas are working.
 
 ## Install documentation pipeline
 
@@ -121,3 +122,41 @@ renaming `doxygen` to `doxygen-1.8.18` within `/usr/local/bin`.
 ### python3 virtual enviroment
 
 Setup a virtual environment for processing:
+
+```bash
+python3 -m venv venv/mom6Doc
+source venv/mom6Doc/bin/activate
+# cd to the docs directory within the MOM6 repo
+pip3 install -r requirements.txt
+```
+
+The `deactivate` command allows you to exit from the virtual environment.
+
+### debugging
+
+A useful commnad line tool for debugging sphinx and extensions is the python debugger.
+Add the following line to stop the program at that point for debugging.
+
+```python
+import pdb; pdb.set_trace()
+```
+
+## Example execution
+
+This assumes use of the example above.
+
+```
+$ source venv/mom6Doc/bin/activate
+(mom6Doc) $ cd docs
+(mom6Doc) $ make clean
+(mom6Doc) $ make html >& _build/html_log.txt
+# If you have latex installed, you can build the pdf
+(mom6Doc) $ make latexpdf >& _build/latex_log.txt
+```
+
+The last command may appear to hang.  On error, latex will request input from the keyboard.
+Press `R` and enter.  This will keep latex running to completion or stop after 100 errors
+are reached.
+
+Once the documentation is built, you can use a web browser to look around in the `_build`
+directory.
