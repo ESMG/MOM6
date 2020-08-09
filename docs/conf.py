@@ -15,6 +15,8 @@
 import sys
 import os
 import subprocess
+# Not available until sphinx v1.6
+#import sphinx_rtd_theme
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
@@ -39,11 +41,13 @@ if return_code != 0: sys.exit(return_code)
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    #'sphinx_rtd_theme',
     'sphinx.ext.mathjax',
     'sphinxcontrib.autodoc_doxygen',
     'sphinxfortran.fortran_domain',
 ]
 
+mathjax_path = 'https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-MML-AM_CHTML'
 autosummary_generate = ['api/modules.rst', 'api/pages.rst']
 doxygen_xml = 'xml'
 
@@ -116,6 +120,8 @@ pygments_style = 'sphinx'
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 html_theme = 'default'
+# Not available until v1.6
+#html_theme = 'sphinx_rtd_theme'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the

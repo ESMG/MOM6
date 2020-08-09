@@ -1,6 +1,7 @@
 # Generated documentation
 
-We use [Doxygen](http://www.doxygen.org/) for in-code documentation of APIs (i.e. arguments to subroutines/functions and members of types).
+We use [Doxygen](http://www.doxygen.org/) for in-code documentation of APIs (i.e. arguments to subroutines/functions and 
+members of types).
 The guide for using doxygen in MOM6 is hosted on the [MOM6 developer's wiki](https://github.com/NOAA-GFDL/MOM6/wiki/Doxygen).
 
 You can preview documentation by running doxygen or sphinx.
@@ -9,9 +10,23 @@ You can preview documentation by running doxygen or sphinx.
 
 The full documentation can be generated locally with
 ```bash
-make html
+make html >& _build/html_log.txt
 ```
-which will generate html in `docs/_build/html/`. Start at `docs/_build/html/index.html`.
+which will generate html in `docs/_build/html/`. Start at `docs/_build/html/index.html`. This will also place log information
+into the `_build` tree that is viewable.  Doxygen output is also available as `doxygen_log.txt`.
+
+## Local web server
+
+Python provides a way to quickly stand up a private web server for checking documentation. It requires knowledge of
+the IP address if you are using a remote server, otherwise `localhost` should work.
+
+You can start the server on any port. Port 8080 is shown here as an example.
+```bash
+python3 -m http.server 8080
+```
+
+After starting the server, you can browse to the known IP using `http://IP/` or if you are on the same
+machine use `http://localhost/`.
 
 ## Doxygen generated HTML
 
@@ -19,7 +34,8 @@ The doxygen generated HTML can be obtained locally (and slightly more quickly) w
 ```bash
 make nortd SPHINXBUILD=false
 ```
-which will generate html in `docs/APIs/`. Start at `docs/APIs/index.html`. If doxygen is not already available this will install a local copy of doxygen.
+which will generate html in `docs/APIs/`. Start at `docs/APIs/index.html`. If doxygen is not already available this will install a 
+local copy of doxygen.
 
 ## Dependencies
 
@@ -36,13 +52,72 @@ If you are building the full generated sphinx documentation you will need the fo
 - libxml2-dev
 - libxslt-dev
 
-(.e.g `apt-get install libxml2-dev libxslt-dev`)
+(e.g. `apt-get install libxml2-dev libxslt-dev`)
+
+We strongly recommend using `python3` with its virtual environment and `pip3`.
+
+(e.g. `apt-get install python3 python3-venv python3-pip`)
 
 Before running sphinx (`make html`) you will need to issue:
+
 ```bash
 pip install -r requirements.txt
 ```
 
+You may need to use `pip3` to install requirements for python3.
+
+Requirements currently lock sphinx to version 1.5.  The latest version of doxygen is 1.8.18.
+
 ## Credits
 
 The sphinx documentation of MOM6 is made possible by modifications by [Angus Gibson](https://github.com/angus-g) to two packages, [sphinx-fortran](https://github.com/angus-g/sphinx-fortran) and [autodoc_doxygen](https://github.com/angus-g/sphinxcontrib-autodoc_doxygen).
+
+## Troubleshooting
+
+### sphinxcontrib.autodoc_doxygen
+
+The value `node.text` can be `None` when passed to `visit_image`.  Edit `site-packages/sphinxcontrib/autodoc_doxygen/xmlutils.py`:
+
+```python
+    def visit_image(self, node):
+
+        type = None
+        if node.text == None and node.tag == 'image':
+            type = 'image'
+
+        if type == None and len(node.text.strip()):
+            type = 'figure'
+        else:
+            type = 'image'
+```
+
+### MathJax
+
+Only one `\label` is supported per large formula block surrounded by `\[` and `\]`.
+
+## Install documentation pipeline
+
+On a relatively bare system with the few dependencies as described above, you can install
+a fairly stable documentation pipeline.
+
+### doxygen
+
+Download latest source.  Latest is `doxygen-1.8.18.src.tar.gz`.
+
+```bash
+tar xzf doxygen-1.8.18.src.tar.gz
+cd doxygen-1.8.18
+mkdir build
+cd build
+cmake -G "Unix Makefiles" ..
+make
+sudo make install
+```
+
+Make install attempts to place the compiled version into /usr/local/bin.  You can link to a
+specific executable within the virtual environment.   At this point we also recommend
+renaming `doxygen` to `doxygen-1.8.18` within `/usr/local/bin`.
+
+### python3 virtual enviroment
+
+Setup a virtual environment for processing:

@@ -703,7 +703,7 @@ LAYOUT_FILE            =
 # LATEX_BIB_STYLE. To use this feature you need bibtex and perl available in the
 # search path. See also \cite for info how to create references.
 
-CITE_BIB_FILES         = ocean.bib, references.bib, zotero.bib
+CITE_BIB_FILES         = ocean.bib references.bib zotero.bib
 
 #---------------------------------------------------------------------------
 # Configuration options related to warning and progress messages
@@ -768,7 +768,7 @@ WARN_FORMAT            = "$file:$line: $text"
 # messages should be written. If left blank the output is written to standard
 # error (stderr).
 
-WARN_LOGFILE           = doxygen.log
+WARN_LOGFILE           = _build/doxygen_log.txt
 
 #---------------------------------------------------------------------------
 # Configuration options related to the input files
@@ -783,7 +783,8 @@ WARN_LOGFILE           = doxygen.log
 INPUT                  = ../src \
                          ../config_src/solo_driver \
                          ../config_src/dynamic_symmetric \
-                         ../config_src/coupled_driver/ocean_model_MOM.F90
+                         ../config_src/external \
+                         ../config_src/coupled_driver
 
 # This tag can be used to specify the character encoding of the source files
 # that doxygen parses. Internally doxygen uses the UTF-8 encoding. Doxygen uses
@@ -1506,7 +1507,8 @@ MATHJAX_FORMAT         = HTML-CSS
 # The default value is: http://cdn.mathjax.org/mathjax/latest.
 # This tag requires that the tag USE_MATHJAX is set to YES.
 
-MATHJAX_RELPATH        = http://cdn.mathjax.org/mathjax/latest
+#MATHJAX_RELPATH        = http://cdn.mathjax.org/mathjax/latest
+MATHJAX_RELPATH        = https://cdn.jsdelivr.net/npm/mathjax@2
 
 # The MATHJAX_EXTENSIONS tag can be used to specify one or more MathJax
 # extension names that should be enabled during MathJax rendering. For example
