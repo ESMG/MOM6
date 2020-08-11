@@ -55,6 +55,11 @@ The placement of model variables in the vertical is illustrated here:
 separated by the layer thicknesses \f$h\f$.
 
 The vertical coordinate is Lagrangian in that the interfaces between the layers are
-free to move up and down with time.
+free to move up and down with time. The interfaces have target depths or target
+densities, depeneding on the desired vertical coordinate system. They can even have
+target sigma values for terrain-following coordinates or you can design a hybrid
+coordinate in which different interfaces have differing behavior. In any case, the
+interfaces move with the fluid during the dynamic timesteps and then get reset during a
+remapping operation. See section~\ref {ALE_timestep} for details.
 
 */
