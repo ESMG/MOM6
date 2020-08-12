@@ -122,6 +122,6 @@ to change during the remap step, yet truncation errors make remapping
 imperfect. We employ high-order accurate reconstructions to minimize
 errors introduced during the remap step (\cite white2008, \cite white2009). The
 connection between time-stepping and remapping is described in
-section \ref subsect-time-stepping-ale .
+section~\ref {ALE_timestep}.
 
 */

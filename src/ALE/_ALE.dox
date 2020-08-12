@@ -27,8 +27,8 @@ the horizontal momentum, thickness, and tracers are time stepped
 with the red terms removed in equations \eqref{eq:h-horz-momentum},
 \eqref{eq:h-thickness-equation} \ref eq-h-thickness-equation "(h-thickness)", \eqref{eq:h-temperature-equation},
 and \eqref{eq:h-salinity-equation}. All advective transport thus
-occurs within a layer as defined by constant \f$r\f$-surfaces so that t
-he volume within each layer is fixed. All other terms are retained in
+occurs within a layer as defined by constant \f$r\f$-surfaces so that
+the volume within each layer is fixed. All other terms are retained in
 their full form, including subgrid scale terms that contribute to
 the transfer of tracer and momentum into distinct \f$r\f$ layers (e.g.,
 dia-surface diffusion of tracer and velocity). Maintaining constant
