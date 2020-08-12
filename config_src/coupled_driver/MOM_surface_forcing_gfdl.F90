@@ -1666,7 +1666,8 @@ subroutine check_mask_val_consistency(val, mask, i, j, varname, G)
 
   real, intent(in) :: val  !< value of flux/variable passed by IOB
   real, intent(in) :: mask !< value of ocean mask
-  integer, intent(in) :: i, j !< model grid cell indices
+  integer, intent(in) :: i !< model grid cell indices
+  integer, intent(in) :: j !< model grid cell indices
   character(len=*), intent(in) :: varname !< variable name
   type(ocean_grid_type), intent(in) :: G !< The ocean's grid structure
   ! Local variables

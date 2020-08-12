@@ -1,5 +1,5 @@
 Spatial Discretization
-=========
+======================
 
 The model equations are the layer-integrated vector-invariant form of the
 hydrostatic primitive equations (either Boussinesq or non-Boussinesq).

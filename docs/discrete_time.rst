@@ -1,5 +1,5 @@
 Time Discretization
-=========
+===================
 
 
 .. toctree::

@@ -33,7 +33,17 @@ contains
 
   !> Initialize generic tracers
   subroutine generic_tracer_init(isc,iec,jsc,jec,isd,ied,jsd,jed,nk,ntau,axes,grid_tmask,grid_kmt,init_time)
-    integer, intent(in) :: isc,iec,jsc,jec,isd,ied,jsd,jed,nk,ntau,axes(3) !< Domain boundaries and axes
+    integer, intent(in) :: isc !< Domain boundaries and axes
+    integer, intent(in) :: iec !< Domain boundaries and axes
+    integer, intent(in) :: jsc !< Domain boundaries and axes
+    integer, intent(in) :: jec !< Domain boundaries and axes
+    integer, intent(in) :: isd !< Domain boundaries and axes
+    integer, intent(in) :: ied !< Domain boundaries and axes
+    integer, intent(in) :: jsd !< Domain boundaries and axes
+    integer, intent(in) :: jed !< Domain boundaries and axes
+    integer, intent(in) :: nk !< Domain boundaries and axes
+    integer, intent(in) :: ntau !< Domain boundaries and axes
+    integer, intent(in) :: axes(3) !< Domain boundaries and axes
     type(time_type),               intent(in) :: init_time !< Time
     real, dimension(:,:,:),target, intent(in) :: grid_tmask !< Mask
     integer, dimension(:,:)      , intent(in) :: grid_kmt !< Number of wet cells in column
@@ -61,7 +71,7 @@ contains
        frunoff,grid_ht, current_wave_stress, sosga)
     real, dimension(ilb:,jlb:,:),   intent(in) :: Temp !< Potential temperature [deg C]
     real, dimension(ilb:,jlb:,:),   intent(in) :: Salt !< Salinity [psu]
-    real, dimension(ilb:,jlb:,:),   intent(in) :: rho_dzt
+    real, dimension(ilb:,jlb:,:),   intent(in) :: rho_dzt !< Unknown
     real, dimension(ilb:,jlb:,:),   intent(in) :: dzt !< Ocean layer thickness [m]
     real, dimension(ilb:,jlb:),     intent(in) :: hblt_depth !< Boundary layer depth
     integer,                        intent(in) :: ilb !< Lower bounds of x extent of input arrays on data domain
@@ -71,14 +81,14 @@ contains
     real, dimension(ilb:,jlb:),     intent(in) :: grid_dat !< Unknown
     type(time_type),                intent(in) :: model_time !< Time
     integer,                        intent(in) :: nbands !< Unknown
-    real, dimension(:),             intent(in) :: max_wavelength_band
+    real, dimension(:),             intent(in) :: max_wavelength_band !< Unknown
     real, dimension(:,ilb:,jlb:),   intent(in) :: sw_pen_band !< Shortwave penetration
     real, dimension(:,ilb:,jlb:,:), intent(in) :: opacity_band !< Unknown
     real, dimension(ilb:,jlb:),optional,  intent(in) :: internal_heat !< Unknown
     real, dimension(ilb:,jlb:),optional,  intent(in) :: frunoff !< Unknown
     real, dimension(ilb:,jlb:),optional,  intent(in) :: grid_ht !< Unknown
     real, dimension(ilb:,jlb:),optional , intent(in) :: current_wave_stress !< Unknown
-    real,                      optional , intent(in) :: sosga ! global avg. sea surface salinity
+    real,                      optional , intent(in) :: sosga !< global avg. sea surface salinity
   end subroutine generic_tracer_source
 
   !> Update the tracers from bottom fluxes

@@ -6,7 +6,7 @@ We here provide more details of the terms appearing  in the ocean model equation
 
 \section Horiz_mom_eq Horizontal Momentum Equation
 
-Equation \ref eq:h-horz-momentum  is the horizontal momentum
+Equation \eqref{eq:h-horz-momentum} is the horizontal momentum
 equation written in its vector-invariant advective form\footnote{The
 vector-invariant advective form is commonly used in models such as MOM6
 using an Arakawa C-grid (e.g., see section 10 of \cite griffies2000-2).}
@@ -27,7 +27,7 @@ The transport of seawater crossing surfaces of constant \f$r\f$ is measured by t
 \f]
 with \f$z_{r}\f$ the specific thickness that is assumed one-signed throughout the ocean, and \f$\mathrm{D}/\mathrm{D}t\f$ the material time derivative operator. In the ocean interior where \f$r\f$ is aligned with isopycnals, the dia-surface velocity becomes the diapycnal velocity whose value is directly related to irreversible processes such as mixing that act on potential temperature and salinity. In the unstratified mixed layers, \f$r =z^{*}\f$ so that \f$z_{r} \dot{r} = (\partial z/\partial z^{*}) \, \mathrm{D}z^{*}/\mathrm{D}t\f$, which is close to the familiar vertical velocity component \f$\mathrm{D}z/\mathrm{D}t\f$.
 
-Viscous dissipation (Laplacian and biharmonic friction following \cite griffies2000) and mechanical boundary forces (winds, bottom stress) contribute to the divergence of the deviatoric (symmetric and trace-free) stress tensor, $\boldsymbol{\mathcal{F}} = \nabla \cdot \mathbf{\tau}$. MOM6 and the real ocean have no vertical sidewalls, and MOM6 treats all solid-earth boundaries with bottom stress parameterized as a quadratic drag.
+Viscous dissipation (Laplacian and biharmonic friction following \cite griffies2000) and mechanical boundary forces (winds, bottom stress) contribute to the divergence of the deviatoric (symmetric and trace-free) stress tensor, \f$\boldsymbol{\mathcal{F}} = \nabla \cdot \mathbf{\tau}\f$. MOM6 and the real ocean have no vertical sidewalls, and MOM6 treats all solid-earth boundaries with bottom stress parameterized as a quadratic drag.
 
 \section hydrostatic_balance Hydrostatic balance
 
