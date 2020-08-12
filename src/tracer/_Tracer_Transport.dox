@@ -10,9 +10,9 @@ concentration is the average of the fluid that will be in the cell after a times
 
 \f[
   \int_{x_{i-1/2}}^{x_{i+1/2}} A_i^{n+1} (x) dx =
-  \int_{x_{i-1/2 - u \Delta t}}^{x_{i+1/2-u\Delta t}} A_i^{n} (x) dx = \\
+  \int_{x_{i-1/2 - u \Delta t}}^{x_{i+1/2-u\Delta t}} A_i^{n} (x) dx &= \mbox{} \\
   \int_{x_{i-1/2}}^{x_{i+1/2}} A_i^{n} (x) dx -
-  \int_{x_{i+1/2 - u \Delta t}}^{x_{i+1/2}} A_i^{n} (x) dx +
+  \int_{x_{i+1/2 - u \Delta t}}^{x_{i+1/2}} A_i^{n} (x) dx &+
   \int_{x_{i-1/2 - u \Delta t}}^{x_{i-1/2}} A_i^{n} (x) dx
 \f]
 
