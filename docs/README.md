@@ -103,10 +103,10 @@ a fairly stable documentation pipeline.
 
 ### doxygen
 
-Download latest source.  Latest is `doxygen-1.8.18.src.tar.gz`.
+Download latest [source](https://www.doxygen.nl/download.html).  Latest is `doxygen-1.8.19.src.tar.gz`.
 
 ```bash
-tar xzf doxygen-1.8.18.src.tar.gz
+tar xzf doxygen-1.8.19.src.tar.gz
 cd doxygen-1.8.18
 mkdir build
 cd build
@@ -117,7 +117,7 @@ sudo make install
 
 Make install attempts to place the compiled version into /usr/local/bin.  You can link to a
 specific executable within the virtual environment.   At this point we also recommend
-renaming `doxygen` to `doxygen-1.8.18` within `/usr/local/bin`.
+renaming `doxygen` to `doxygen-1.8.19` within `/usr/local/bin`.
 
 ### python3 virtual enviroment
 

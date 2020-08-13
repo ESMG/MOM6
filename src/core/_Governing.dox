@@ -15,7 +15,7 @@ the divergence of stresses including those provided through boundary interaction
 
 The prognostic thermodynamic variables are potential temperature,
 \f$\theta\f$, and salinity \f$S\f$, which are related to <em>in situ</em> density
-\f$\rho\f$ through the \cite{wright1997} equation of state. In the potential
+\f$\rho\f$ through the \cite wright1997 equation of state. In the potential
 temperature and salinity equations, fluxes due to diabatic, vertically
 oriented processes are indicated by \f$J^{(z)}\f$. The tendency due to the
 convergence of fluxes oriented along neutral directions is indicated by

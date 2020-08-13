@@ -102,7 +102,17 @@ contains
   end subroutine g_tracer_set_csdiag
 
   subroutine g_tracer_set_common(isc,iec,jsc,jec,isd,ied,jsd,jed,nk,ntau,axes,grid_tmask,grid_kmt,init_time)
-    integer,                     intent(in) :: isc,iec,jsc,jec,isd,ied,jsd,jed,nk,ntau,axes(3) !< Unknown
+    integer,                     intent(in) :: isc !< Unknown
+    integer,                     intent(in) :: iec !< Unknown
+    integer,                     intent(in) :: jsc !< Unknown
+    integer,                     intent(in) :: jec !< Unknown
+    integer,                     intent(in) :: isd !< Unknown
+    integer,                     intent(in) :: ied !< Unknown
+    integer,                     intent(in) :: jsd !< Unknown
+    integer,                     intent(in) :: jed !< Unknown
+    integer,                     intent(in) :: nk !< Unknown
+    integer,                     intent(in) :: ntau !< Unknown
+    integer,                     intent(in) :: axes(3) !< Unknown
     real, dimension(isd:,jsd:,:),intent(in) :: grid_tmask !< Unknown
     integer,dimension(isd:,jsd:),intent(in) :: grid_kmt !< Unknown
     type(time_type),             intent(in) :: init_time !< Unknown
@@ -110,7 +120,16 @@ contains
 
   subroutine g_tracer_get_common(isc,iec,jsc,jec,isd,ied,jsd,jed,nk,ntau,&
        axes,grid_tmask,grid_mask_coast,grid_kmt,init_time,diag_CS)
-    integer,               intent(out) :: isc,iec,jsc,jec,isd,ied,jsd,jed,nk,ntau !< Unknown
+    integer,               intent(out) :: isc !< Unknown
+    integer,               intent(out) :: iec !< Unknown
+    integer,               intent(out) :: jsc !< Unknown
+    integer,               intent(out) :: jec !< Unknown
+    integer,               intent(out) :: isd !< Unknown
+    integer,               intent(out) :: ied !< Unknown
+    integer,               intent(out) :: jsd !< Unknown
+    integer,               intent(out) :: jed !< Unknown
+    integer,               intent(out) :: nk !< Unknown
+    integer,               intent(out) :: ntau !< Unknown
     integer,optional,      intent(out) :: axes(3) !< Unknown
     type(time_type), optional,      intent(out) :: init_time !< Unknown
     real, optional, dimension(:,:,:),pointer    :: grid_tmask !< Unknown
@@ -123,15 +142,17 @@ contains
   subroutine g_tracer_get_4D(g_tracer_list,name,member,array_ptr)
     character(len=*),         intent(in) :: name !< Unknown
     character(len=*),         intent(in) :: member !< Unknown
-    type(g_tracer_type),    pointer    :: g_tracer_list, g_tracer !< Unknown
-    real, dimension(:,:,:,:), pointer    :: array_ptr
+    type(g_tracer_type),    pointer    :: g_tracer !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer_list !< Unknown
+    real, dimension(:,:,:,:), pointer    :: array_ptr !< Unknown
   end subroutine g_tracer_get_4D
 
   !> Unknown
   subroutine g_tracer_get_3D(g_tracer_list,name,member,array_ptr)
     character(len=*),         intent(in) :: name !< Unknown
     character(len=*),         intent(in) :: member !< Unknown
-    type(g_tracer_type),    pointer    :: g_tracer_list, g_tracer !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer_list !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer !< Unknown
     real, dimension(:,:,:), pointer    :: array_ptr !< Unknown
   end subroutine g_tracer_get_3D
 
@@ -139,7 +160,8 @@ contains
   subroutine g_tracer_get_2D(g_tracer_list,name,member,array_ptr)
     character(len=*),         intent(in) :: name !< Unknown
     character(len=*),         intent(in) :: member !< Unknown
-    type(g_tracer_type),    pointer    :: g_tracer_list, g_tracer !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer_list !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer !< Unknown
     real, dimension(:,:), pointer    :: array_ptr !< Unknown
   end subroutine g_tracer_get_2D
 
@@ -147,17 +169,21 @@ contains
   subroutine g_tracer_get_4D_val(g_tracer_list,name,member,array,isd,jsd)
     character(len=*),         intent(in) :: name !< Unknown
     character(len=*),         intent(in) :: member !< Unknown
-    type(g_tracer_type),    pointer    :: g_tracer_list, g_tracer !< Unknown
-    integer,                  intent(in) :: isd,jsd !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer_list !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer !< Unknown
     real, dimension(isd:,jsd:,:,:), intent(out):: array !< Unknown
+    integer,                  intent(in) :: isd !< Unknown
+    integer,                  intent(in) :: jsd !< Unknown
   end subroutine g_tracer_get_4D_val
 
   !> Unknown
   subroutine g_tracer_get_3D_val(g_tracer_list,name,member,array,isd,jsd,ntau,positive)
     character(len=*),         intent(in) :: name !< Unknown
     character(len=*),         intent(in) :: member !< Unknown
-    type(g_tracer_type),    pointer    :: g_tracer_list, g_tracer !< Unknown
-    integer,                  intent(in) :: isd,jsd !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer_list !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer !< Unknown
+    integer,                  intent(in) :: jsd !< Unknown
+    integer,                  intent(in) :: isd !< Unknown
     integer, optional,        intent(in) :: ntau !< Unknown
     logical, optional,        intent(in) :: positive !< Unknown
     real, dimension(isd:,jsd:,:), intent(out):: array !< Unknown
@@ -169,8 +195,10 @@ contains
   subroutine g_tracer_get_2D_val(g_tracer_list,name,member,array,isd,jsd)
     character(len=*),         intent(in) :: name !< Unknown
     character(len=*),         intent(in) :: member !< Unknown
-    type(g_tracer_type),    pointer    :: g_tracer_list, g_tracer !< Unknown
-    integer,                  intent(in) :: isd,jsd !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer_list !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer !< Unknown
+    integer,                  intent(in) :: isd !< Unknown
+    integer,                  intent(in) :: jsd !< Unknown
     real, dimension(isd:,jsd:), intent(out):: array !< Unknown
   end subroutine g_tracer_get_2D_val
 
@@ -178,15 +206,17 @@ contains
   subroutine g_tracer_get_real(g_tracer_list,name,member,value)
     character(len=*),         intent(in) :: name !< Unknown
     character(len=*),         intent(in) :: member !< Unknown
-    type(g_tracer_type),    pointer    :: g_tracer_list, g_tracer !< Unknown
-    real,                     intent(out):: value
+    type(g_tracer_type),    pointer    :: g_tracer_list !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer !< Unknown
+    real,                     intent(out):: value !< Unknown
   end subroutine g_tracer_get_real
 
   !> Unknown
   subroutine g_tracer_get_string(g_tracer_list,name,member,string)
     character(len=*),         intent(in) :: name !< Unknown
     character(len=*),         intent(in) :: member !< Unknown
-    type(g_tracer_type),    pointer    :: g_tracer_list, g_tracer !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer_list !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer !< Unknown
     character(len=fm_string_len), intent(out) :: string !< Unknown
   end subroutine g_tracer_get_string
 
@@ -194,8 +224,10 @@ contains
   subroutine g_tracer_set_2D(g_tracer_list,name,member,array,isd,jsd,weight)
     character(len=*),         intent(in) :: name !< Unknown
     character(len=*),         intent(in) :: member !< Unknown
-    type(g_tracer_type),      pointer    :: g_tracer_list, g_tracer !< Unknown
-    integer,                   intent(in) :: isd,jsd !< Unknown
+    type(g_tracer_type),      pointer    :: g_tracer_list !< Unknown
+    type(g_tracer_type),      pointer    :: g_tracer !< Unknown
+    integer,                   intent(in) :: isd !< Unknown
+    integer,                   intent(in) :: jsd !< Unknown
     real, dimension(isd:,jsd:),intent(in) :: array !< Unknown
     real, optional            ,intent(in) :: weight !< Unknown
   end subroutine g_tracer_set_2D
@@ -204,8 +236,10 @@ contains
   subroutine g_tracer_set_3D(g_tracer_list,name,member,array,isd,jsd,ntau)
     character(len=*),         intent(in) :: name !< Unknown
     character(len=*),         intent(in) :: member !< Unknown
-    type(g_tracer_type),    pointer    :: g_tracer_list, g_tracer !< Unknown
-    integer,                  intent(in) :: isd,jsd !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer_list !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer !< Unknown
+    integer,                  intent(in) :: isd !< Unknown
+    integer,                  intent(in) :: jsd !< Unknown
     integer, optional,        intent(in) :: ntau !< Unknown
     real, dimension(isd:,jsd:,:), intent(in)       :: array !< Unknown
   end subroutine g_tracer_set_3D
@@ -214,8 +248,10 @@ contains
   subroutine g_tracer_set_4D(g_tracer_list,name,member,array,isd,jsd)
     character(len=*),         intent(in) :: name !< Unknown
     character(len=*),         intent(in) :: member !< Unknown
-    type(g_tracer_type),    pointer    :: g_tracer_list, g_tracer !< Unknown
-    integer,                  intent(in) :: isd,jsd !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer_list !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer !< Unknown
+    integer,                  intent(in) :: isd !< Unknown
+    integer,                  intent(in) :: jsd !< Unknown
     real, dimension(isd:,jsd:,:,:), intent(in)       :: array !< Unknown
   end subroutine g_tracer_set_4D
 
@@ -223,7 +259,8 @@ contains
   subroutine g_tracer_set_real(g_tracer_list,name,member,value)
     character(len=*),         intent(in) :: name !< Unknown
     character(len=*),         intent(in) :: member !< Unknown
-    type(g_tracer_type),    pointer    :: g_tracer_list, g_tracer !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer_list !< Unknown
+    type(g_tracer_type),    pointer    :: g_tracer !< Unknown
     real,                     intent(in) :: value !< Unknown
   end subroutine g_tracer_set_real
 
@@ -265,7 +302,7 @@ contains
   !! Since the surface flux from the atmosphere (%stf) has the units of mol/m^2/sec the resulting
   !!  tracer concentration has units of mol/Kg
   subroutine g_tracer_vertdiff_G(g_tracer, h_old, ea, eb, dt, kg_m2_to_H, m_to_H, tau, mom)
-    type(g_tracer_type),    pointer  :: g_tracer
+    type(g_tracer_type),    pointer  :: g_tracer !< Unknown
     !> Layer thickness before entrainment, in m or kg m-2.
     real, dimension(g_tracer_com%isd:,g_tracer_com%jsd:,:), intent(in) :: h_old
     !> The amount of fluid entrained from the layer above, in H.
@@ -278,7 +315,7 @@ contains
     real,     intent(in) :: m_to_H !< A conversion factor that translates m into the units
                                    !! of h_old (H).
     integer,  intent(in) :: tau !< Unknown
-    logical,  intent(in), optional :: mom
+    logical,  intent(in), optional :: mom !< Unknown
   end subroutine g_tracer_vertdiff_G
 
 end module g_tracer_utils

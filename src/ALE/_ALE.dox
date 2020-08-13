@@ -25,7 +25,7 @@ of two general steps. The first evolves the ocean state forward in
 time according to a vertical Lagrangian limit with \f$\dot{r}=0\f$. Hence,
 the horizontal momentum, thickness, and tracers are time stepped
 with the red terms removed in equations \eqref{eq:h-horz-momentum},
-\eqref{eq:h-thickness-equation}, \eqref{eq:h-temperature-equation},
+\eqref{eq:h-thickness-equation} \ref eq-h-thickness-equation "(h-thickness)", \eqref{eq:h-temperature-equation},
 and \eqref{eq:h-salinity-equation}. All advective transport thus
 occurs within a layer as defined by constant \f$r\f$-surfaces so that
 the volume within each layer is fixed. All other terms are retained in
@@ -49,38 +49,54 @@ methods developed by \cite white2008 and \cite white2009.
 
 The underlying algorithm for treatment of the vertical can
 be related to operator-splitting of the red terms in equations
-\ref{eq:h-thickness-equation}--\ref{eq:h-temperature-equation}. If we
+\eqref{eq:h-thickness-equation}--\eqref{eq:h-temperature-equation}. If we
 consider, for simplicity, an Euler-forward update for a time-step \f$\Delta
 t\f$, the time-stepping for the continuity and temperature equation can
 be summarized as
 
+\anchor eq-ale-thickness-equation
+\ref eq-ale-thickness-equation "thickness:"
 \f[
+\begin{equation}
 h^\dagger = h^{(n)} - \Delta t \left[ \nabla_r \cdot \left( h \, \mathbf{u} \right) \right]
 \mbox{thickness} \label{eq:ale-thickness-equation} \\
+\end{equation}
 \f]
 
+\anchor eq-ale-temperature-equation
+\ref eq-ale-temperature-equation "potential temperature:"
 \f[
+\begin{equation}
 \theta^\dagger \, h^\dagger = \theta^{(n)} \, h^{(n)} - \Delta t \left[ \nabla_r \cdot \left( \theta h \, \mathbf{u} \right) - h \boldsymbol{\mathcal{N}}_\theta^\gamma + \delta_r J_\theta^{(z)} \right]
 \;\;\;\;\mbox{potential temp} \label{eq:ale-temperature-equation} \\
+\end{equation}
 \f]
 
+\anchor eq-ale-new-grid
+\ref eq-ale-new-grid "move grid:"
 \f[
+\begin{equation}
 h^{(n+1)} = h^\dagger - \Delta t \, \delta_r \left( z_r \dot{r} \right)
 \mbox{move grid} \label{eq:ale-new-grid} \\
+\end{equation}
 \f]
 
+\anchor eq-ale-remap-temperature
+\ref eq-ale-remap-temperature "remap temperature:"
 \f[
+\begin{equation}
 \theta^{(n+1)} h^{(n+1)} = \theta^\dagger h^\dagger - \Delta t \, \delta_r \left( z_r \dot{r} \, \theta^\dagger  \right)
 \mbox{remap temperature.} \label{eq:ale-remap-temperature}
+\end{equation}
 \f]
 
-Substituting \ref{eq:ale-thickness-equation} into \ref{eq:ale-new-grid}
-recovers a time-discrete form of \ref{eq:h-thickness-equation}. The
+Substituting \eqref{eq:ale-thickness-equation} \ref eq-ale-thickness-equation "(ale-thickness)" into \eqref{eq:ale-new-grid}
+recovers a time-discrete form of \eqref{eq:h-thickness-equation} \ref eq-h-thickness-equation "(h-thickness)". The
 intermediate quantities indicated by \f$^\dagger\f$-symbols are the result of
 the vertical Lagrangian step of the algorithm. What were the red terms in
 the continuous-in-time equations are used to evolve the the intermediate
 quantities to the final updated quantities each step. In MOM6, equation
-\ref{eq:ale-new-grid} is essentially used to define the dia-surface
+\eqref{eq:ale-new-grid} is essentially used to define the dia-surface
 transport \f$z_r \dot{r}\f$ by prescribing \f$h^{(n+1)}\f$. For example, to
 recover a z-coordinate model, \f$h^{(n+1)}=\Delta z\f$, and \f$z_r \dot{r}\f$
 becomes the Eulerian vertical velocity, \f$w\f$.

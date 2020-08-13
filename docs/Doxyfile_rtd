@@ -228,13 +228,26 @@ TAB_SIZE               = 2
 # "Side Effects:". You can put \n's in the value part of an alias to insert
 # newlines.
 
-ALIASES                =
+# Reference: https://git.ligo.org/lscsoft/lalsuite-archive/commit/e6e2dae8a73a73979a64854bbf697b077803697a
+#ALIASES                = "eqref{1}= Eq.&nbsp;\\eqref{\1}" \
+#                         "figref{1}= Fig.&nbsp;[\ref \1]" \
+#                         "tableref{1}= Table&nbsp;[\ref \1]" \
+#                         "figure{4}= \anchor \1 \image html \1.png \"Fig.&nbsp;[\1]: \4\""
+
+# This allows doxygen passthrough of \eqref to html for mathjax
+ALIASES += eqref{1}="Eq. \\eqref{\1}"
+
+# Reference: https://stackoverflow.com/questions/25290453/how-do-i-add-a-footnote-in-doxygen
+# TODO: Use this simple js library to create actual footnotes in html
+# Reference: https://github.com/jheftmann/footnoted
+ALIASES += footnote{1}="\latexonly\footnote\{\1\}\endlatexonly\htmlonly<sup title=\"\1\"><b>[*]</b></sup>\endhtmlonly"
 
 # This tag can be used to specify a number of word-keyword mappings (TCL only).
 # A mapping has the form "name=value". For example adding "class=itcl::class"
 # will allow you to use the command class in the itcl::class meaning.
 
-TCL_SUBST              =
+# Obsolete
+#TCL_SUBST              =
 
 # Set the OPTIMIZE_OUTPUT_FOR_C tag to YES if your project consists of C sources
 # only. Doxygen will then generate output that is more tailored for C. For
@@ -1073,7 +1086,7 @@ IGNORE_PREFIX          =
 # If the GENERATE_HTML tag is set to YES, doxygen will generate HTML output
 # The default value is: YES.
 
-GENERATE_HTML          = NO
+GENERATE_HTML          = YES
 
 # The HTML_OUTPUT tag is used to specify where the HTML docs will be put. If a
 # relative path is entered the value of OUTPUT_DIRECTORY will be put in front of
@@ -1081,7 +1094,7 @@ GENERATE_HTML          = NO
 # The default directory is: html.
 # This tag requires that the tag GENERATE_HTML is set to YES.
 
-HTML_OUTPUT            = APIs
+HTML_OUTPUT            = _build/doxygen_html
 
 # The HTML_FILE_EXTENSION tag can be used to specify the file extension for each
 # generated HTML page (for example: .htm, .php, .asp).
@@ -1508,7 +1521,10 @@ MATHJAX_FORMAT         = HTML-CSS
 # This tag requires that the tag USE_MATHJAX is set to YES.
 
 #MATHJAX_RELPATH        = http://cdn.mathjax.org/mathjax/latest
-MATHJAX_RELPATH        = https://cdn.jsdelivr.net/npm/mathjax@2
+# To enable MathJax, place the <script> code in the HEADER instead of referencing
+# it here.  The MATHJAX_RELPATH pulls in MathJax.js which is just the configuration
+# options.
+MATHJAX_RELPATH         = _static/
 
 # The MATHJAX_EXTENSIONS tag can be used to specify one or more MathJax
 # extension names that should be enabled during MathJax rendering. For example
@@ -1618,7 +1634,7 @@ EXTRA_SEARCH_MAPPINGS  =
 # If the GENERATE_LATEX tag is set to YES, doxygen will generate LaTeX output.
 # The default value is: YES.
 
-GENERATE_LATEX         = NO
+GENERATE_LATEX         = YES
 
 # The LATEX_OUTPUT tag is used to specify where the LaTeX docs will be put. If a
 # relative path is entered the value of OUTPUT_DIRECTORY will be put in front of
@@ -1626,7 +1642,7 @@ GENERATE_LATEX         = NO
 # The default directory is: latex.
 # This tag requires that the tag GENERATE_LATEX is set to YES.
 
-LATEX_OUTPUT           = latex
+LATEX_OUTPUT           = _build/doxygen_latex
 
 # The LATEX_CMD_NAME tag can be used to specify the LaTeX command name to be
 # invoked.
@@ -1762,7 +1778,7 @@ LATEX_HIDE_INDICES     = NO
 # The default value is: NO.
 # This tag requires that the tag GENERATE_LATEX is set to YES.
 
-LATEX_SOURCE_CODE      = NO
+LATEX_SOURCE_CODE      = YES
 
 # The LATEX_BIB_STYLE tag can be used to specify the style to use for the
 # bibliography, e.g. plainnat, or ieeetr. See

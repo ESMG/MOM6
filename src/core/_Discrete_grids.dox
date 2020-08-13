@@ -60,6 +60,6 @@ densities, depeneding on the desired vertical coordinate system. They can even h
 target sigma values for terrain-following coordinates or you can design a hybrid
 coordinate in which different interfaces have differing behavior. In any case, the
 interfaces move with the fluid during the dynamic timesteps and then get reset during a
-remapping operation. See section~\ref {ALE_timestep} for details.
+remapping operation. See section \ref ALE_Timestep for details.
 
 */

@@ -47,7 +47,12 @@ extensions = [
     'sphinxfortran.fortran_domain',
 ]
 
-mathjax_path = 'https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-MML-AM_CHTML'
+# For sphinx 1.5 we have to tell it where to find the latest MathJax and we need to
+# enable 'ams' style numbering.  For doxygen, an alias needs to be added.
+# See ALIASES
+mathjax_path = 'MathJax.js'
+#math_number_all = True
+
 autosummary_generate = ['api/modules.rst', 'api/pages.rst']
 doxygen_xml = 'xml'
 
