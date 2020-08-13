@@ -2,4 +2,60 @@
 
 \brief Horizontal diffusion of tracers
 
+For the interior of the ocean, we would like to have horizontal diffusion
+with the following properties:
+
+\li Suitable for general coordinate models
+\li Preserves extrema
+\li Has no need for regularization or tapering (such as needed by rotated mixing
+tensors)
+
+\section Epineutral_Diffusion Epineutral Diffusion
+
+The algorithm used in MOM6 is described by \cite Shao2020 and will be
+introduced here. The aim is to allow lateral mixing of tracers within
+isopycnal layers. It is appropriate for the adiabatic interior of the ocean
+while a lateral mixing scheme for the surface boundary layer is described below.
+
+Before presenting this scheme, a quick review of polynomial
+reconstructions is in order. Some choices for the vertical representation
+of a finite volume quantity are shown here:
+
+\image html shao0.png Polynomial reconstructions, starting with piecewise
+constant on the left, piecewise linear in the middle and piecewise
+parabolic on the right.
+
+Some desired quantities for the polynomial reconstructions to be used are:
+
+\li Tracer concentrations represent the cell-averages in vertical
+discretization.
+\li Must be monotonic and introduce no new extrema.
+\li Discontinuous reconstructions are desirable to limit intracell slopes.
+
+The algorithm has three phases: initialization, sorting, and flux
+calculation.
+
+\subsection Epineutral_Initialization Initialization
+
+We begin by generating polynomial reconstructions of the vertical tracer
+quantities such as shown by the blue lines here:
+
+\image html shao1.png Polynomial reconstructions of two adjacent water
+columns.
+
+Because we are looking to mix along epineutral surfaces, we need to find
+surfaces of uniform density by using the temperature, salinity, and
+their effect on the density, \f$\alpha\f$ and \f$\beta\f$. We then find
+the values of \f$\alpha\f$ and \f$\beta\f$ at the interfaces.
+
+Also during the initialization, the unstable parts of the water column are
+set aside to be skipped by this algorithm.
+
+\subsection Epineutral_Sorting Sorting
+
+
+\subsection Epineutral_Flux_Calculation Flux Calculation
+
+\section Surface_Diffusion Surface Diffusion
+
 */

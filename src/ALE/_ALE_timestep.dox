@@ -42,8 +42,8 @@ with the new velocities and tracers:
   \frac{1}{2}} + h_k} \vec{u}^\mbox{old}(z')dz'
 \f]
 \f[
-  \phi^{\mbox{new}} = \frac{1}{h_k} \int_{z_{k + \frac{1}{2}}}^{z_{k +
-  \frac{1}{2}} + h_k} \phi^\mbox{old}(z')dz'
+  \theta^{\mbox{new}} = \frac{1}{h_k} \int_{z_{k + \frac{1}{2}}}^{z_{k +
+  \frac{1}{2}} + h_k} \theta^\mbox{old}(z')dz'
 \f]
 
 */
