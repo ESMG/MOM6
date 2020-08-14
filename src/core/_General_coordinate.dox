@@ -10,7 +10,7 @@ The Boussinesq hydrostatic equations of motion in general-coordinate
 \anchor eq-r-horz-momentum
 \anchor eq-r-hydrostatic-equation
 \f{eqnarray}
-\rho_0 \left( \frac{\partial \mathbf{u}}{\partial t} + ( f + \zeta ) \, \hat{\mathbf{z}} \wedge \mathbf{u} + \dot{r} \, \frac{\partial \mathbf{u}}{\partial r} + \nabla_r \, K \right) &= -\nabla_r \, p - \rho \nabla_r \, \Phi + \boldsymbol{\mathcal{F}}
+\rho_0 \left( \frac{\partial \mathbf{u}}{\partial t} + ( f + \zeta ) \, \hat{\mathbf{z}} \times \mathbf{u} + \dot{r} \, \frac{\partial \mathbf{u}}{\partial r} + \nabla_r \, K \right) &= -\nabla_r \, p - \rho \nabla_r \, \Phi + \boldsymbol{\mathcal{F}}
 &\mbox{momentum} \label{eq:r-horz-momentum} \\
 \rho \, \frac{\partial \Phi}{\partial r} + \frac{\partial p}{\partial r} &= 0
 &\mbox{hydrostatic} \label{eq:r-hydrostatic-equation} \\
@@ -36,7 +36,7 @@ inverse vertical stratification of the vertical coordinate surfaces.
 
 \anchor eq-h-thickness-equation
 \f{eqnarray}
-\rho_0 \left( \frac{\partial \mathbf{u}}{\partial t} + \frac{( f + \zeta )}{h} \, \hat{\mathbf{z}} \wedge h \, \mathbf{u} + { \dot{r} \, \frac{\partial \mathbf{u}}{\partial r} } + \nabla_r K \right) &= -\nabla_r \, p - \rho \nabla_r \, \Phi + \boldsymbol{\mathcal{F}}
+\rho_0 \left( \frac{\partial \mathbf{u}}{\partial t} + \frac{( f + \zeta )}{h} \, \hat{\mathbf{z}} \times h \, \mathbf{u} + { \dot{r} \, \frac{\partial \mathbf{u}}{\partial r} } + \nabla_r K \right) &= -\nabla_r \, p - \rho \nabla_r \, \Phi + \boldsymbol{\mathcal{F}}
 &\mbox{momentum} \label{eq:h-horz-momentum} \\
 \rho \, \delta_r \Phi + \delta_r p &= 0
 &\mbox{hydrostatic} \label{eq:h-hydrostatic-equation} \\

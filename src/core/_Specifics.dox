@@ -14,7 +14,7 @@ with \f$\mathbf{u} = \hat{\mathbf{x}} \, u + \hat{\mathbf{y}} \, v\f$
 the horizontal velocity, \f$p\f$ the hydrostatic pressure, \f$f\f$
 the Coriolis parameter, and
 \f[
-\zeta^{(r)} = \hat{\bf z} \cdot (\nabla_{r}\wedge \mathbf{u})
+\zeta^{(r)} = \hat{\bf z} \cdot (\nabla_{r}\times \mathbf{u})
 \f]
 the vertical component of the vorticity using \f$\nabla_{r}\f$ for the curl operator. The discretization of the Coriolis term is the enstrophy conserving scheme of \cite sadourny1975. The geopotential coordinate, \f$z\f$, has a value \f$z=0\f$ at a resting ocean surface, \f$z=\eta(x,y,t)\f$ at the ocean free surface, and \f$z=-H(x,y)\f$ at the ocean bottom. We use the Boussinesq approximation (volume conserving kinematics) with \f$\rho_{0} = 1035~\mbox{kg}~\mbox{m}^{-3}\f$ the reference density.\footnote{MOM6 has an option for compressible non-Boussinesq flow (mass conserving kinematics). We chose the Boussinesq option largely based on legacy.} Time and horizontal derivatives are computed holding the generalized vertical coordinate fixed rather than the geopotential
 \f[

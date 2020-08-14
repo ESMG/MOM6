@@ -2,7 +2,7 @@
 
 The Boussinesq hydrostatic equations of motion in height coordinates are
 
-\f[  D_t \boldsymbol{u} + f \widehat{\boldsymbol{k}} \wedge \boldsymbol{u} + \frac{\rho}{\rho_o} \boldsymbol{\nabla}_z \Phi + \frac{1}{\rho_o} \boldsymbol{\nabla}_z p &= \boldsymbol{\mathcal{F}} &\mbox{ momentum} \\
+\f[  D_t \boldsymbol{u} + f \widehat{\boldsymbol{k}} \times \boldsymbol{u} + \frac{\rho}{\rho_o} \boldsymbol{\nabla}_z \Phi + \frac{1}{\rho_o} \boldsymbol{\nabla}_z p &= \boldsymbol{\mathcal{F}} &\mbox{ momentum} \\
   \rho \, \frac{\partial \Phi}{\partial z} + \frac{\partial p}{\partial z} &= 0 &\mbox{ hydrostatic} \\
   \boldsymbol{\nabla}_z \cdotp \boldsymbol{u} + \frac{\partial w}{\partial z} &= 0 &\mbox{ thickness} \\
   D_t \theta &= \boldsymbol{\mathcal{N}}_\theta^\gamma - \frac{\partial J_\theta^{(z)}}{\partial z} &\mbox{ potential temp} \\
@@ -36,7 +36,7 @@ The non-divergence of flow allows a total derivative to be re-written in flux fo
 
 The above equations of motion can thus be written as:
 
-\f[  D_t \boldsymbol{u} + f \widehat{\boldsymbol{k}} \wedge \boldsymbol{u} + \frac{\rho}{\rho_o}\boldsymbol{\nabla}_z \Phi + \frac{1}{\rho_o} \boldsymbol{\nabla}_z p &= \boldsymbol{\mathcal{F}} &\mbox{ momentum}\\
+\f[  D_t \boldsymbol{u} + f \widehat{\boldsymbol{k}} \times \boldsymbol{u} + \frac{\rho}{\rho_o}\boldsymbol{\nabla}_z \Phi + \frac{1}{\rho_o} \boldsymbol{\nabla}_z p &= \boldsymbol{\mathcal{F}} &\mbox{ momentum}\\
   \rho \, \frac{\partial \Phi}{\partial z} + \frac{\partial p}{\partial z} &= 0 &\mbox{ hydrostatic} \\
   \boldsymbol{\nabla}_z \cdotp \boldsymbol{u} + \frac{\partial w}{\partial z} &= 0 &\mbox{ thickness} \\
   \frac{\partial \theta}{\partial t} + \boldsymbol{\nabla}_z \cdotp ( \boldsymbol{u} \theta ) + \frac{\partial ( w \theta )}{\partial z} &= \boldsymbol{\mathcal{N}}_\theta^\gamma - \frac{\partial J_\theta^{(z)}}{\partial z} &\mbox{ potential temp} \\
@@ -52,12 +52,14 @@ A vector identity allows the total derivative of velocity to be written in the v
 
 \f[  D_t \boldsymbol{u} &= \partial_t \boldsymbol{u} + \boldsymbol{v} \cdotp \boldsymbol{\nabla} \boldsymbol{u} \\
               &= \partial_t \boldsymbol{u} + \boldsymbol{u} \cdotp \boldsymbol{\nabla}_z \boldsymbol{u} + w \partial_z \boldsymbol{u} \\
-              &= \partial_t \boldsymbol{u} + \left( \boldsymbol{\nabla} \wedge \boldsymbol{u} \right) \wedge \boldsymbol{v} + \boldsymbol{\nabla} \underbrace{\frac{1}{2} \left|\boldsymbol{u}\right|^2}_{\equiv K} .
+              &= \partial_t \boldsymbol{u} + \left( \boldsymbol{\nabla}
+	      \times \boldsymbol{u} \right) \times \boldsymbol{v} + \boldsymbol{\nabla} \underbrace{\frac{1}{2} \left|\boldsymbol{u}\right|^2}_{\equiv K} .
 \f]
 
 The flux-form equations of motion in height coordinates can thus be written succinctly as:
 
- \f[ \partial_t \boldsymbol{u} + \left( f \widehat{\boldsymbol{k}} + \boldsymbol{\nabla} \wedge \boldsymbol{u} \right) \wedge \boldsymbol{v} + \boldsymbol{\nabla} K
+ \f[ \partial_t \boldsymbol{u} + \left( f \widehat{\boldsymbol{k}} +
+ \boldsymbol{\nabla} \times \boldsymbol{u} \right) \times \boldsymbol{v} + \boldsymbol{\nabla} K
   + \frac{\rho}{\rho_o} \boldsymbol{\nabla} \Phi + \frac{1}{\rho_o} \boldsymbol{\nabla} p &= \boldsymbol{\mathcal{F}} &\mbox{ momentum} \\
   \boldsymbol{\nabla}_z \cdotp \boldsymbol{u} + \partial_z w &= 0 &\mbox{ thickness} \\
   \partial_t \theta + \boldsymbol{\nabla}_z \cdotp ( \boldsymbol{u} \theta ) + \partial_z ( w \theta ) &= \boldsymbol{\mathcal{N}}_\theta^\gamma - \frac{\partial J_\theta^{(z)}}{\partial z} &\mbox{ potential temp} \\
