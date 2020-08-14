@@ -55,40 +55,20 @@ t\f$, the time-stepping for the continuity and temperature equation can
 be summarized as
 
 \anchor eq-ale-thickness-equation
-\ref eq-ale-thickness-equation "thickness:"
-\f[
-\begin{equation}
-h^\dagger = h^{(n)} - \Delta t \left[ \nabla_r \cdot \left( h \, \mathbf{u} \right) \right]
-\mbox{thickness} \label{eq:ale-thickness-equation} \\
-\end{equation}
-\f]
-
 \anchor eq-ale-temperature-equation
-\ref eq-ale-temperature-equation "potential temperature:"
-\f[
-\begin{equation}
-\theta^\dagger \, h^\dagger = \theta^{(n)} \, h^{(n)} - \Delta t \left[ \nabla_r \cdot \left( \theta h \, \mathbf{u} \right) - h \boldsymbol{\mathcal{N}}_\theta^\gamma + \delta_r J_\theta^{(z)} \right]
-\;\;\;\;\mbox{potential temp} \label{eq:ale-temperature-equation} \\
-\end{equation}
-\f]
-
 \anchor eq-ale-new-grid
-\ref eq-ale-new-grid "move grid:"
-\f[
-\begin{equation}
-h^{(n+1)} = h^\dagger - \Delta t \, \delta_r \left( z_r \dot{r} \right)
-\mbox{move grid} \label{eq:ale-new-grid} \\
-\end{equation}
-\f]
-
 \anchor eq-ale-remap-temperature
-\ref eq-ale-remap-temperature "remap temperature:"
-\f[
-\begin{equation}
-\theta^{(n+1)} h^{(n+1)} = \theta^\dagger h^\dagger - \Delta t \, \delta_r \left( z_r \dot{r} \, \theta^\dagger  \right)
-\mbox{remap temperature.} \label{eq:ale-remap-temperature}
-\end{equation}
-\f]
+
+\f{eqnarray}
+h^\dagger &= h^{(n)} - \Delta t \left[ \nabla_r \cdot \left( h \, \mathbf{u} \right) \right]
+&\mbox{thickness} \label{eq:ale-thickness-equation} \\
+\theta^\dagger \, h^\dagger &= \theta^{(n)} \, h^{(n)} - \Delta t \left[ \nabla_r \cdot \left( \theta h \, \mathbf{u} \right) - h \boldsymbol{\mathcal{N}}_\theta^\gamma + \delta_r J_\theta^{(z)} \right]
+&\;\;\;\;\mbox{potential temp} \label{eq:ale-temperature-equation} \\
+h^{(n+1)} &= h^\dagger - \Delta t \, \delta_r \left( z_r \dot{r} \right)
+&\mbox{move grid} \label{eq:ale-new-grid} \\
+\theta^{(n+1)} h^{(n+1)} &= \theta^\dagger h^\dagger - \Delta t \, \delta_r \left( z_r \dot{r} \, \theta^\dagger  \right)
+&\mbox{remap temperature.} \label{eq:ale-remap-temperature}
+\f}
 
 Substituting \eqref{eq:ale-thickness-equation} \ref eq-ale-thickness-equation "(ale-thickness)" into \eqref{eq:ale-new-grid}
 recovers a time-discrete form of \eqref{eq:h-thickness-equation} \ref eq-h-thickness-equation "(h-thickness)". The
