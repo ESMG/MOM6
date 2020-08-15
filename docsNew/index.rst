@@ -6,11 +6,13 @@
 Welcome to MOM6's documentation!
 ================================
 
+Contents: 
+
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
 
-   README.rst
+   equations
+   README
 
 
 Indices and tables

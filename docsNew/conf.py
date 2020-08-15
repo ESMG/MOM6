@@ -30,6 +30,8 @@ release = '0.0'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+        'sphinxcontrib.bibtex',
+        'sphinxcontrib.autodoc_doxygen',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -39,7 +41,6 @@ templates_path = ['_templates']
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -52,3 +53,9 @@ html_theme = 'sphinx_rtd_theme'
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+
+# -- Options for autodoc_doxygen --------------------------------------------
+doxygen_xml = 'xml'
+autosummary_generate = [
+        'api/pages.rst',
+]
