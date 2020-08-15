@@ -19,18 +19,18 @@ doxygen_version='1.8.19'
 # debugging
 #subprocess.call('hostname', shell=True)
 #subprocess.call('uname -a', shell=True)
-subprocess.call('wget -q http://doxygen.nl/files/doxygen-1.8.19.src.tar.gz', shell=True)
-subprocess.call('tar xzf doxygen-1.8.19.src.tar.gz', shell=True)
-subprocess.call('mkdir doxygen-1.8.19/build')
-subprocess.call('(cd doxygen-1.8.19/build; cmake -G "Unix Makefiles" ..)')
-subprocess.call('df -h', shell=True)
-#subprocess.call('apt list', shell=True)
 # Get current doxygen version and path
 subprocess.call('doxygen -v >& doxygen_ver.txt', shell=True)
 subprocess.call('pwd >& pwd.txt', shell=True)
-subprocess.call('ls -l', shell=True)
 subprocess.call('ls -lR /usr/local', shell=True)
 subprocess.call('which doxygen', shell=True)
+subprocess.call('df -h', shell=True)
+subprocess.call('wget -q http://doxygen.nl/files/doxygen-1.8.19.src.tar.gz', shell=True)
+subprocess.call('tar xzf doxygen-1.8.19.src.tar.gz', shell=True)
+subprocess.call('ls -l', shell=True)
+#subprocess.call('mkdir doxygen-1.8.19/build')
+subprocess.call('(cd doxygen-1.8.19/build; cmake -G "Unix Makefiles" ..)')
+#subprocess.call('apt list', shell=True)
 subprocess.call('doxygen doxygen_rtd.conf', shell=True)
 
 # -- Project information -----------------------------------------------------
