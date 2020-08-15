@@ -12,4 +12,4 @@ python:
   # make sure we're using Python 3
   version: 3
   install:
-    - docsNew/requirements.txt
+    - requirements: docsNew/requirements.txt
