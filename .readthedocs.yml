@@ -4,7 +4,7 @@ formats:
 
 # path to pip requirements file to bring in
 # doxygen extensions
-requirements_file: docs/requirements.txt
+requirements_file: docsNew/requirements.txt
 
 python:
   # make sure we're using Python 3
