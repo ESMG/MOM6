@@ -17,30 +17,50 @@
 import subprocess, os, sys
 from subprocess import check_output
 doxygen_version='1.8.19'
+running_on_rtd=False
 
 # debugging
 #subprocess.call('hostname', shell=True)
 #subprocess.call('uname -a', shell=True)
 #subprocess.call('apt list', shell=True)
 
-# Get current doxygen version and path
-out = check_output(["doxygen","-v"])
-print("*>",out)
+# Detect if we are running on readthedocs.org
 out = check_output(["pwd"])
+out = out.strip()
 print("*>",out)
-out = check_output(["which","doxygen"])
-print("*>",out)
-subprocess.call('ls -l /etc', shell=True)
-subprocess.call('wget -q http://doxygen.nl/files/doxygen-1.8.19.src.tar.gz', shell=True)
-subprocess.call('tar xzf doxygen-1.8.19.src.tar.gz', shell=True)
-subprocess.call('ls -l', shell=True)
-os.chdir('doxygen-1.8.19')
-os.mkdir('build')
-os.chdir('build')
-subprocess.call('cmake -G "Unix Makefiles" ..')
-subprocess.call('ls -lR', shell=True)
-os.chdir('../..')
-subprocess.call('doxygen doxygen_rtd.conf', shell=True)
+# On RTD you would see something like:
+# /home/docs/checkouts/readthedocs.org/user_builds/mom6devesmgnew/checkouts/latest/docsNew
+if out.strip().decode('utf-8').find('readthedocs.org') >= 0:
+    running_on_rtd = True
+
+# Attempt to do some setup on RTD
+if running_on_rtd:
+    # Get current doxygen version and path
+    out = check_output(["doxygen","-v"])
+    out = out.strip().decode('utf-8')
+    print("*>",out)
+    out = check_output(["pwd"])
+    out = out.strip().decode('utf-8')
+    print("*>",out)
+    out = check_output(["which","doxygen"])
+    out = out.strip().decode('utf-8')
+    print("*>",out)
+    # If we do not have the doxygen version we want, build it
+    subprocess.call('wget -q http://doxygen.nl/files/doxygen-1.8.19.src.tar.gz', shell=True)
+    subprocess.call('tar xzf doxygen-1.8.19.src.tar.gz', shell=True)
+    subprocess.call('ls -l', shell=True)
+    #os.chdir('doxygen-1.8.19')
+    #os.mkdir('build')
+    #os.chdir('build')
+    subprocess.call('(cd doxygen-1.8.19;cmake -G "Unix Makefiles" ..)', shell=True)
+    subprocess.call('ls -lR', shell=True)
+    #os.chdir('../..')
+
+# Automatic switching of doxygen configuration files 
+if running_on_rtd:
+  subprocess.call('doxygen doxygen_rtd.conf', shell=True)
+else:
+  subprocess.call('doxygen doxygen.conf', shell=True)
 
 # -- Project information -----------------------------------------------------
 
