@@ -14,6 +14,8 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
+import subprocess
+subprocess.call('doxygen doxygen.conf', shell=True)
 
 # -- Project information -----------------------------------------------------
 
