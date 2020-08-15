@@ -11,22 +11,23 @@ with each other.
 Assuming the target vertical grid is level \f$z\f$-surfaces, the initial state is
 shown on the left in the following figure:
 
-\image html remapping1.png The initial state with level surface (left) and the
-perturbed state after a wave has come through (right).
+\image html remapping1.png The initial state with level surface (left) and the perturbed state after a wave has come through (right).
+\image latex remapping1.png The initial state with level surface (left) and the perturbed state after a wave has come through (right).
 
 Some time later, a wave has perturbed the surfaces which move with the
 fluid and it has been determined that a remapping operation is needed. The
 target vertical grid is still level \f$z\f$-surfaces, so this new target
 grid is shown overlaid on the left as regrid:
 
-\image html remapping2.png The regrid operation (left) and the remap operation
-(right).
+\image html remapping2.png The regrid operation (left) and the remap operation (right).
+\image latex remapping2.png The regrid operation (left) and the remap operation (right).
 
 The complex part of the operation is remapping the wavy field onto the new grid as
 shown on the right and again in the final frame after the old deformed coordinate
 system has been deleted:
 
 \image html remapping3.png The final state after remapping.
+\image latex remapping3.png The final state after remapping.
 
 Mathematically, the new layer thicknesses, \f$h_k\f$, are computed and then populated
 with the new velocities and tracers:

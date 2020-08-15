@@ -15,7 +15,12 @@
 # sys.path.insert(0, os.path.abspath('.'))
 
 import subprocess
-subprocess.call('doxygen doxygen.conf', shell=True)
+# debugging
+subprocess.call('hostname', shell=True)
+subprocess.call('uname -a', shell=True)
+# Get RTD to tell us the version it is using
+subprocess.call('doxygen -v', shell=True)
+subprocess.call('doxygen doxygen_rtd.conf', shell=True)
 
 # -- Project information -----------------------------------------------------
 
