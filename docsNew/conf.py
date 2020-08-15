@@ -45,6 +45,7 @@ if running_on_rtd:
     out = check_output(["which","doxygen"])
     out = out.strip().decode('utf-8')
     print("*>",out)
+    subprocess.call('apt-get install cmake', shell=True)
     out = check_output(["which","cmake"])
     out = out.strip().decode('utf-8')
     print("*>",out)
