@@ -20,7 +20,7 @@ doxygen_version='1.8.19'
 #subprocess.call('hostname', shell=True)
 #subprocess.call('uname -a', shell=True)
 subprocess.call('wget -q http://doxygen.nl/files/doxygen-1.8.19.src.tar.gz', shell=True)
-subprocess.call('tar xzf http://doxygen.nl/files/doxygen-1.8.19.src.tar.gz', shell=True)
+subprocess.call('tar xzf doxygen-1.8.19.src.tar.gz', shell=True)
 subprocess.call('mkdir doxygen-1.8.19/build')
 subprocess.call('(cd doxygen-1.8.19/build; cmake -G "Unix Makefiles" ..)')
 subprocess.call('df -h', shell=True)
