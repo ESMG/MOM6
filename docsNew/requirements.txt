@@ -1,4 +1,7 @@
 Sphinx==3.2.1
 sphinx-rtd-theme==0.5.0
 sphinxcontrib-bibtex==1.0.0
-sphinxcontrib-autodoc-doxygen==0.6.0
+# Generic
+#sphinxcontrib-autodoc-doxygen==0.6.0
+# Development
+git+https://github.com/jr3cermak/sphinxcontrib-autodoc_doxygen.git@dev#egg=sphinxcontrib-autodoc_doxygen
