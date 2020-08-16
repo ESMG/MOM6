@@ -13,6 +13,8 @@ Contents:
 
    equations
    README
+   Bibliography
+~                               
 
 
 Indices and tables

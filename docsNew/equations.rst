@@ -12,7 +12,5 @@ algorithm, taken from :cite:`Adcroft2019`.
 .. toctree::
     :maxdepth: 2
 
-..  api/generated/pages/ALE
+    api/generated/pages/ALE
 
-.. bibliography:: ../docs/ocean.bib ../docs/references.bib ../docs/zotero.bib
-   :style: plain

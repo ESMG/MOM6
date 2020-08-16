@@ -65,7 +65,7 @@ templates_path = ['_templates']
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
-# See if we can stop building the latex version by specifing pdflatex
+# RTD systematically builds latex and latexpdf versions automatically
 latex_engine = 'pdflatex'
 
 # -- Options for HTML output -------------------------------------------------

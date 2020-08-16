@@ -2,7 +2,7 @@
 BUILDDIR=_build
 
 # Doxygen cleanup
-rm -rf xml MOM6.tags
+rm -rf xml MOM6.tags api/generated
 # Sphinx cleanup
 make clean
 # Build html
