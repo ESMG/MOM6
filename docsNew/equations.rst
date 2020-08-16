@@ -10,7 +10,8 @@ general-coordinate equations to the final equations used in the A.L.E.
 algorithm, taken from :cite:`Adcroft2019`.
 
 .. toctree::
-    :maxdepth: 2
+   :maxdepth: 2
 
-    api/generated/pages/ALE
+   api/generated/pages/ALE
+
 

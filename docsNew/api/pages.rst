@@ -11,6 +11,6 @@ Pages
 
 .. toctree::
    :glob:
-   :maxdepth: 1
+   :maxdepth: 2
 
    generated/pages/*

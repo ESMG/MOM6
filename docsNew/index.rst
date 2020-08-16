@@ -11,11 +11,10 @@ Contents:
 .. toctree::
    :maxdepth: 2
 
+   about
    equations
-   README
-   Bibliography
-~                               
-
+   zzbibliography
+   administrivia
 
 Indices and tables
 ==================
