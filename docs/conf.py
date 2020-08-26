@@ -27,6 +27,8 @@ if os.environ.get('NCAR_FORK'):
 else:
     doxygenize = 'doxygen Doxyfile_rtd'
 if os.path.exists('./doxygen/bin/doxygen'): doxygenize = './doxygen/bin/'+doxygenize
+if os.path.exists('./bin/doxygen'): doxygenize = './bin/'+doxygenize
+print("Doxygen:",doxygenize)
 return_code = subprocess.call(doxygenize, shell=True)
 if return_code != 0: sys.exit(return_code)
 
