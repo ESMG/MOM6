@@ -76,16 +76,21 @@ else:
 # -- Determine how sphinx-build was called -----------------------------------
 
 # Determine how sphinx-build called.  This is needed to drive
-sphinx_build_mode = None
+sphinx_build_mode = "undefined"
 # hunt for -M (or -b) and then we want the argument after it
+#import pdb; pdb.set_trace()
 if '-M' in sys.argv:
     idx = sys.argv.index('-M')
     sphinx_build_mode = sys.argv[idx+1]
-    print("Sphinx-build mode: %s" % (sphinx_build_mode))
 elif '-b' in sys.argv:
     idx = sys.argv.index('-b')
     sphinx_build_mode = sys.argv[idx+1]
-    print("Sphinx-build mode: %s" % (sphinx_build_mode))
+
+# RTD has a special mode: readthedocs => html
+if sphinx_build_mode = 'readthedocs':
+    sphinx_build_mode = 'html'
+
+print("Sphinx-build mode: %s" % (sphinx_build_mode))
 
 # -- Project information -----------------------------------------------------
 

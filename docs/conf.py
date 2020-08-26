@@ -50,11 +50,15 @@ sphinx_build_mode = "undefined"
 if '-M' in sys.argv:
     idx = sys.argv.index('-M')
     sphinx_build_mode = sys.argv[idx+1]
-    print("Sphinx-build mode: %s" % (sphinx_build_mode))
 elif '-b' in sys.argv:
     idx = sys.argv.index('-b')
     sphinx_build_mode = sys.argv[idx+1]
-    print("Sphinx-build mode: %s" % (sphinx_build_mode))
+
+# RTD has a special mode: readthedocs => html
+if sphinx_build_mode = 'readthedocs':
+    sphinx_build_mode = 'html'
+
+print("Sphinx-build mode: %s" % (sphinx_build_mode))
 
 # -- General configuration ------------------------------------------------
 
@@ -65,9 +69,11 @@ elif '-b' in sys.argv:
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    'sphinxcontrib.bibtex',
-    'sphinxcontrib.autodoc_doxygen',
-    'sphinxfortran.fortran_domain',
+        'sphinxcontrib.bibtex',
+        'sphinxcontrib.autodoc_doxygen',
+        'sphinx.ext.ifconfig',
+        'sphinxfortran.fortran_domain',
+        'sphinxfortran.fortran_autodoc',
 ]
 
 autosummary_generate = ['api/modules.rst', 'api/pages.rst']
