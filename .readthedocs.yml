@@ -6,10 +6,10 @@ formats:
 
 # Build documentation
 sphinx:
-  configuration: docsNew/conf.py
+  configuration: docs/conf.py
 
 python:
   # make sure we're using Python 3
   version: 3
   install:
-    - requirements: docsNew/requirements.txt
+    - requirements: docs/requirements.txt
