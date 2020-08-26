@@ -6,7 +6,7 @@ We here provide more details of the terms appearing  in the ocean model equation
 
 \section Horiz_mom_eq Horizontal Momentum Equation
 
-Equation \eqref{eq:h-horz-momentum} is the horizontal momentum
+Equation \eqref{eq:h-horz-momentum,h-equations,momentum} is the horizontal momentum
 equation written in its vector-invariant advective form\footnote{The
 vector-invariant advective form is commonly used in models such as MOM6
 using an Arakawa C-grid (e.g., see section 10 of \cite griffies2000-2).}
@@ -31,11 +31,11 @@ Viscous dissipation (Laplacian and biharmonic friction following \cite griffies2
 
 \section hydrostatic_balance Hydrostatic balance
 
-Equation \eqref{eq:h-hydrostatic-equation} is the discrete version of the hydrostatic balance. The horizontal pressure gradient force is implemented as a contact force following the method of \cite adcroft2008. These equations differ from \cite bleck2002 who uses the Montgomery potential to calculate pressure gradient accelerations.
+Equation \eqref{eq:h-hydrostatic-equation,h-equations,hydrostatic} is the discrete version of the hydrostatic balance. The horizontal pressure gradient force is implemented as a contact force following the method of \cite adcroft2008. These equations differ from \cite bleck2002 who uses the Montgomery potential to calculate pressure gradient accelerations.
 
 \section Thickness_and_tracer Thickness and tracer equations
 
-Volume conservation appears in the form of a prognostic flux-form layer thickness equation \eqref{eq:h-thickness-equation}, with the non-negative layer thickness given by
+Volume conservation appears in the form of a prognostic flux-form layer thickness equation \eqref{eq:h-thickness-equation,h-equations,thickness}, with the non-negative layer thickness given by
 \f[
 h = \frac{\partial z}{\partial r} \, \mathrm{d}r,
 \f]
@@ -52,8 +52,8 @@ near vanishing layers.
 
 Transport in the thickness equation is discretized
 compatibly with that in the flux-form potential temperature
-and salinity equations \eqref{eq:h-temperature-equation} and
-\eqref{eq:h-salinity-equation}. Compatibility is required to maintain
+and salinity equations \eqref{eq:h-temperature-equation,h-equations,potential temperature} and
+\eqref{eq:h-salinity-equation,h-equations,salinity}. Compatibility is required to maintain
 global and layer integrated conservation properties for volume, heat, and
 salt. Tracer reconstruction for transport uses PPM with monotonic limiters
 but using third order interpolation for edge values. This reduces the size
@@ -71,7 +71,7 @@ Parameterized subgrid scale advection from the submesoscale (\cite fox-kemper201
 
 \section EOS Equation of state
 
-The equation of state, \eqref{eq:h-equation-of-state}, determines <em>in situ</em> density as a function of potential temperature, salinity, and pressure. We evaluate the pressure in the equation of state according to \f$- g \, \rho_{0} \, z\f$. Doing so maintains energetic consistency for the Boussinesq fluid according to section 2.4.3 of \cite GVbook. We make use of the \cite wright1997 equation of state so that \f$\theta\f$ is potential temperature and \f$S\f$ is the practical salinity. Although MOM6 has the more updated equation of state from \cite TEOS2010, the required changes for thermodynamic variables were implemented only after the basic model configuration was developed. Time constraints on model development prompted us to retain usage of \cite wright1997 for OM4.
+The equation of state, \eqref{eq:h-equation-of-state,h-equations,equation of state}, determines <em>in situ</em> density as a function of potential temperature, salinity, and pressure. We evaluate the pressure in the equation of state according to \f$- g \, \rho_{0} \, z\f$. Doing so maintains energetic consistency for the Boussinesq fluid according to section 2.4.3 of \cite GVbook. We make use of the \cite wright1997 equation of state so that \f$\theta\f$ is potential temperature and \f$S\f$ is the practical salinity. Although MOM6 has the more updated equation of state from \cite TEOS2010, the required changes for thermodynamic variables were implemented only after the basic model configuration was developed. Time constraints on model development prompted us to retain usage of \cite wright1997 for OM4.
 
 The freezing point of seawater is approximated as
 \f[

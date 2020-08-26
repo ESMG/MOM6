@@ -21,6 +21,7 @@ Contents:
   other_physics
   working_with_MOM6
   apiref
+  zzbibliography
 
 
 Indices and tables

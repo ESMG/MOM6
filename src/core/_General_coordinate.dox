@@ -7,9 +7,8 @@ Transforming to a vertical coordinate \f$r(z,x,y,t)\f$, with \f$\dot{r} = \frac{
 The Boussinesq hydrostatic equations of motion in general-coordinate
 \f$r\f$ are:
 
-\anchor eq-r-horz-momentum
-\anchor eq-r-hydrostatic-equation
 \f{eqnarray}
+\label{html:r-equations} \\
 \rho_0 \left( \frac{\partial \mathbf{u}}{\partial t} + ( f + \zeta ) \, \hat{\mathbf{z}} \times \mathbf{u} + \dot{r} \, \frac{\partial \mathbf{u}}{\partial r} + \nabla_r \, K \right) &= -\nabla_r \, p - \rho \nabla_r \, \Phi + \boldsymbol{\mathcal{F}}
 &\mbox{momentum} \label{eq:r-horz-momentum} \\
 \rho \, \frac{\partial \Phi}{\partial r} + \frac{\partial p}{\partial r} &= 0
@@ -34,8 +33,8 @@ inverse vertical stratification of the vertical coordinate surfaces.
  layer thickness is \f$h = \int z_r dr\f$ and variables are treated as finite
  volume averages over each layer:
 
-\anchor eq-h-thickness-equation
 \f{eqnarray}
+\label{html:h-equations} \\
 \rho_0 \left( \frac{\partial \mathbf{u}}{\partial t} + \frac{( f + \zeta )}{h} \, \hat{\mathbf{z}} \times h \, \mathbf{u} + { \dot{r} \, \frac{\partial \mathbf{u}}{\partial r} } + \nabla_r K \right) &= -\nabla_r \, p - \rho \nabla_r \, \Phi + \boldsymbol{\mathcal{F}}
 &\mbox{momentum} \label{eq:h-horz-momentum} \\
 \rho \, \delta_r \Phi + \delta_r p &= 0
@@ -47,12 +46,12 @@ inverse vertical stratification of the vertical coordinate surfaces.
 \frac{\partial ( S \, h )}{\partial t} + \nabla_r \cdot \left( S \, h \, \mathbf{u} \right) + { \delta_r ( S \, z_r \dot{r} ) } &= h \boldsymbol{\mathcal{N}}_S^\gamma - \delta_r J_S^{(z)}
 &\mbox{salinity} \label{eq:h-salinity-equation} \\
 \rho &= \rho\left( S, \theta, -g \rho_0 z(r) \right)
-&\mbox{equation of state,}
+&\mbox{equation of state,} \label{eq:h-equation-of-state}
 \f}
 
 where \f$\delta_{r} = \mathrm{d}r \, (\partial/\partial r)\f$ is the discrete
 vertical difference operator. The pressure gradient accelerations
-in the momentum equation \eqref{eq:h-horz-momentum} are written in
+in the momentum equation \eqref{eq:h-horz-momentum,h-equations,momentum} are written in
 continuous-in-the-vertical form for brevity; the exact discretization
 is detailed in \cite adcroft2008. The MOM6 time-stepping algorithm
 integrates the above layer-averaged equations forward allowing the

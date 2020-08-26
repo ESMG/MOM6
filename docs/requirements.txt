@@ -1,2 +1,3 @@
-git+https://github.com/angus-g/sphinxcontrib-autodoc_doxygen.git#egg=sphinxcontrib-autodoc_doxygen
-git+https://github.com/angus-g/sphinx-fortran.git#egg=sphinx-fortran
+git+https://github.com/jr3cermak/sphinxcontrib-autodoc_doxygen.git@dev#egg=sphinxcontrib-autodoc_doxygen
+git+https://github.com/jr3cermak/sphinx-fortran.git@dev#egg=sphinx-fortran
+git+https://github.com/jr3cermak/flint.git@dev#egg=flint

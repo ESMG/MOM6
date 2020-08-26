@@ -12,6 +12,8 @@ algorithm, taken from :cite:`Adcroft2019`.
 .. toctree::
    :maxdepth: 2
 
+   api/generated/pages/Notation
+   api/generated/pages/Governing_Equations
+   api/generated/pages/General_Coordinate
+   api/generated/pages/Specifics
    api/generated/pages/ALE
-
-

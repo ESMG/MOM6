@@ -52,10 +52,6 @@ clean:
 html:
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
 	cp _static/theme_overrides.css _build/html/_static/
-	cp _static/MathJax.js _build/html/_static/
-	mkdir _build/doxygen_html/_static
-	cp _static/theme_overrides.css _build/doxygen_html/_static/
-	cp _static/MathJax.js _build/doxygen_html/_static/
 	@echo
 	@echo "Build finished. The HTML pages are in $(BUILDDIR)/html."
 

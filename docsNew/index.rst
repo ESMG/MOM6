@@ -13,8 +13,9 @@ Contents:
 
    about
    equations
-   zzbibliography
+   apiref
    administrivia
+   zzbibliography
 
 Indices and tables
 ==================
