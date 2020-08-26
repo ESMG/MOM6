@@ -3,5 +3,3 @@ git+https://github.com/jr3cermak/sphinx-fortran.git@dev#egg=sphinx-fortran
 git+https://github.com/jr3cermak/flint.git@dev#egg=flint
 sphinx-rtd-theme
 sphinxcontrib-bibtex
-setuptools
-wheel
