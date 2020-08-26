@@ -2,7 +2,7 @@ version: 2
 
 # Extra formats
 formats:
-  - pdf
+  - html
 
 # Build documentation
 sphinx:
