@@ -30,6 +30,32 @@ if os.path.exists('./doxygen/bin/doxygen'): doxygenize = './doxygen/bin/'+doxyge
 return_code = subprocess.call(doxygenize, shell=True)
 if return_code != 0: sys.exit(return_code)
 
+# -- Custom configuration values and roles -----------------------------------
+from docutils import nodes
+
+def setup(app):
+    app.add_config_value('sphinx_build_mode', '', 'env')
+    app.add_role('latex', latexPassthru)
+def latexPassthru(name, rawtext, text, lineno, inliner, options={}, content=[]):
+    node = nodes.raw('',rawtext[8:-1],format='latex')
+
+    return [node],[]
+
+# -- Determine how sphinx-build was called -----------------------------------
+
+# Determine how sphinx-build called.  This is needed to drive
+sphinx_build_mode = "undefined"
+# hunt for -M (or -b) and then we want the argument after it
+#import pdb; pdb.set_trace()
+if '-M' in sys.argv:
+    idx = sys.argv.index('-M')
+    sphinx_build_mode = sys.argv[idx+1]
+    print("Sphinx-build mode: %s" % (sphinx_build_mode))
+elif '-b' in sys.argv:
+    idx = sys.argv.index('-b')
+    sphinx_build_mode = sys.argv[idx+1]
+    print("Sphinx-build mode: %s" % (sphinx_build_mode))
+
 # -- General configuration ------------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.
@@ -39,7 +65,7 @@ if return_code != 0: sys.exit(return_code)
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    'sphinx.ext.mathjax',
+    'sphinxcontrib.bibtex',
     'sphinxcontrib.autodoc_doxygen',
     'sphinxfortran.fortran_domain',
 ]
@@ -102,6 +128,7 @@ exclude_patterns = ['_build','src']
 #show_authors = False
 
 # The name of the Pygments (syntax highlighting) style to use.
+# RTD: try default? does it matter?
 pygments_style = 'sphinx'
 
 # A list of ignored prefixes for module index sorting.
@@ -115,7 +142,8 @@ pygments_style = 'sphinx'
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = 'default'
+
+html_theme = 'sphinx_rtd_theme'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the

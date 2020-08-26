@@ -1,0 +1,23 @@
+/*! \page Barotropic_Momentum_Equations Barotropic Momentum Equations
+
+\brief Barotropic Momentum Equations
+
+The barotropic equations are timestepped on a relatively short timestep compared to the
+rest of the model. Since the timestep constraints for this are known, the barotropic
+timestep is computed at runtime.
+
+The 2-d linear momentum equations with integrated continuity are:
+
+\f[
+  \frac{\partial \eta}{\partial t} +  \nabla \cdot \left( ( D + \eta) \overline{u}_{BT}
+  h_k \right) = P - E
+\f]
+\f[
+  \frac{\partial \overline{u}_{BT}}{\partial t} = - g \nabla \eta - f \hat{z} \times
+  \overline{u}_{BT} + \overline{F}_{BT}
+\f]
+where \f$\overline{F}_{BT}\f$ is the barotropic momentum forcing. As can be seen,
+explicit mass fluxes such as evaporation and precipitation change the model volume
+explicitly.
+
+*/

@@ -2,7 +2,7 @@
 #
 
 # You can set these variables from the command line.
-SPHINXOPTS    =
+SPHINXOPTS    = -vvv
 SPHINXBUILD   = sphinx-build
 PAPER         =
 BUILDDIR      = _build
@@ -47,10 +47,11 @@ help:
 	@echo "  doctest    to run all doctests embedded in the documentation (if enabled)"
 
 clean:
-	rm -rf $(BUILDDIR)/*
+	rm -rf $(BUILDDIR)/* api/generated xml MOM6.tags
 
 html:
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
+	cp _static/theme_overrides.css _build/html/_static/
 	@echo
 	@echo "Build finished. The HTML pages are in $(BUILDDIR)/html."
 
@@ -187,4 +188,3 @@ Clean: clean
 	rm -rf _build APIs xml doxygen.log
 CLEAN: Clean
 	rm -rf doxygen src
-	rm -rf _build APIs src xml doxygen doxygen.log

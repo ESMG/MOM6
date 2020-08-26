@@ -1,0 +1,38 @@
+/*! \page Tracer_Transport_Equations Tracer Transport Equations
+
+\brief Tracer Transport Equations
+
+\image html PPM_1d.png The 1-D finite volume advection of tracers. The reddish fluid
+will be in the cell at the end of the timestep.
+
+Given a piecewise polynomial description of the tracer concentration, the new tracer cell
+concentration is the average of the fluid that will be in the cell after a timestep.
+
+\f[
+  \int_{x_{i-1/2}}^{x_{i+1/2}} A_i^{n+1} (x) dx =
+  \int_{x_{i-1/2 - u \Delta t}}^{x_{i+1/2-u\Delta t}} A_i^{n} (x) dx &= \mbox{} \\
+  \int_{x_{i-1/2}}^{x_{i+1/2}} A_i^{n} (x) dx -
+  \int_{x_{i+1/2 - u \Delta t}}^{x_{i+1/2}} A_i^{n} (x) dx &+
+  \int_{x_{i-1/2 - u \Delta t}}^{x_{i-1/2}} A_i^{n} (x) dx
+\f]
+
+Fluxes are found by analytically integrating the profile over the distance that is
+swept past the face within a timestep.
+
+\f[
+    a_i^n = \frac{1}{\Delta x} \int_{x_{i-1/2}}^{x_{i+1/2}} A_i^n(x) dx
+\f]
+\f[
+    a_i^{n+1} = a_i^n - \frac{\Delta t}{\Delta x} (F_{i+1/2} - F_{i-1/2})
+\f]
+\f[
+    F_{i+1/2} = \frac{1}{\Delta t} \int_{x_{i+1/2 - u \Delta t}}^{x_{i+1/2}} A_i^n(x) dx
+\f]
+\f[
+    F_{i-1/2} = \frac{1}{\Delta t} \int_{x_{i-1/2 - u \Delta t}}^{x_{i-1/2}} A_i^n(x) dx
+\f]
+
+With piecewise constant profiles, this approach give first order upwind advection.
+Higher order polynomials (e.g., parabolas) can give higher order accuracy.
+
+*/

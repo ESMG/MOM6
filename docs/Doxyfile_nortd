@@ -237,13 +237,26 @@ TAB_SIZE               = 2
 # newlines (in the resulting output). You can put ^^ in the value part of an
 # alias to insert a newline as if a physical newline was in the original file.
 
-ALIASES                =
+# Reference: https://git.ligo.org/lscsoft/lalsuite-archive/commit/e6e2dae8a73a73979a64854bbf697b077803697a
+#ALIASES                = "eqref{1}= Eq.&nbsp;\\eqref{\1}" \
+#                         "figref{1}= Fig.&nbsp;[\ref \1]" \
+#                         "tableref{1}= Table&nbsp;[\ref \1]" \
+#                         "figure{4}= \anchor \1 \image html \1.png \"Fig.&nbsp;[\1]: \4\""
+
+# This allows doxygen passthrough of \eqref to html for mathjax
+ALIASES += eqref{1}="Eq. \\eqref{\1}"
+
+# Reference: https://stackoverflow.com/questions/25290453/how-do-i-add-a-footnote-in-doxygen
+# TODO: Use this simple js library to create actual footnotes in html
+# Reference: https://github.com/jheftmann/footnoted
+ALIASES += footnote{1}="\latexonly\footnote\{\1\}\endlatexonly\htmlonly<sup title=\"\1\"><b>[*]</b></sup>\endhtmlonly"
 
 # This tag can be used to specify a number of word-keyword mappings (TCL only).
 # A mapping has the form "name=value". For example adding "class=itcl::class"
 # will allow you to use the command class in the itcl::class meaning.
 
-TCL_SUBST              =
+# Obsolete
+#TCL_SUBST              =
 
 # Set the OPTIMIZE_OUTPUT_FOR_C tag to YES if your project consists of C sources
 # only. Doxygen will then generate output that is more tailored for C. For
@@ -712,7 +725,7 @@ LAYOUT_FILE            = layout.xml
 # LATEX_BIB_STYLE. To use this feature you need bibtex and perl available in the
 # search path. See also \cite for info how to create references.
 
-CITE_BIB_FILES         =
+CITE_BIB_FILES         = ocean.bib references.bib zotero.bib
 
 #---------------------------------------------------------------------------
 # Configuration options related to warning and progress messages
@@ -778,7 +791,7 @@ WARN_FORMAT            = "$file:$line: $text"
 # messages should be written. If left blank the output is written to standard
 # error (stderr).
 
-WARN_LOGFILE           = doxygen.log
+WARN_LOGFILE           = _build/doxygen_log.txt
 
 #---------------------------------------------------------------------------
 # Configuration options related to the input files
@@ -1088,7 +1101,7 @@ IGNORE_PREFIX          =
 # If the GENERATE_HTML tag is set to YES, doxygen will generate HTML output
 # The default value is: YES.
 
-GENERATE_HTML          = YES
+GENERATE_HTML          = NO
 
 # The HTML_OUTPUT tag is used to specify where the HTML docs will be put. If a
 # relative path is entered the value of OUTPUT_DIRECTORY will be put in front of
@@ -1530,7 +1543,11 @@ MATHJAX_FORMAT         = HTML-CSS
 # The default value is: https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.2/.
 # This tag requires that the tag USE_MATHJAX is set to YES.
 
-MATHJAX_RELPATH        = http://cdn.mathjax.org/mathjax/latest
+#MATHJAX_RELPATH        = http://cdn.mathjax.org/mathjax/latest
+# To enable MathJax, place the <script> code in the HEADER instead of referencing
+# it here.  The MATHJAX_RELPATH pulls in MathJax.js which is just the configuration
+# options.
+MATHJAX_RELPATH        = _static/
 
 # The MATHJAX_EXTENSIONS tag can be used to specify one or more MathJax
 # extension names that should be enabled during MathJax rendering. For example
@@ -2113,13 +2130,15 @@ SKIP_FUNCTION_MACROS   = NO
 # the path). If a tag file is not located in the directory in which doxygen is
 # run, you must also specify the path to the tagfile here.
 
+#TAGFILES               = /home/kate/ESMG/ESMG-configs/src/MOM6/docs/MOM6.tags=/home/kate/ESMG/ESMG-configs/src/MOM6/docs
+#TAGFILES               = MOM6.tags
 TAGFILES               =
 
 # When a file name is specified after GENERATE_TAGFILE, doxygen will create a
 # tag file that is based on the input files it reads. See section "Linking to
 # external documentation" for more information about the usage of tag files.
 
-GENERATE_TAGFILE       =
+GENERATE_TAGFILE       = MOM6.tags
 
 # If the ALLEXTERNALS tag is set to YES, all external class will be listed in
 # the class index. If set to NO, only the inherited external classes will be
@@ -2142,12 +2161,6 @@ EXTERNAL_GROUPS        = YES
 
 EXTERNAL_PAGES         = YES
 
-# The PERL_PATH should be the absolute path and name of the perl script
-# interpreter (i.e. the result of 'which perl').
-# The default file (with absolute path) is: /usr/bin/perl.
-
-PERL_PATH              = /usr/bin/perl
-
 #---------------------------------------------------------------------------
 # Configuration options related to the dot tool
 #---------------------------------------------------------------------------
@@ -2160,15 +2173,6 @@ PERL_PATH              = /usr/bin/perl
 # The default value is: YES.
 
 CLASS_DIAGRAMS         = YES
-
-# You can define message sequence charts within doxygen comments using the \msc
-# command. Doxygen will then run the mscgen tool (see:
-# http://www.mcternan.me.uk/mscgen/)) to produce the chart and insert it in the
-# documentation. The MSCGEN_PATH tag allows you to specify the directory where
-# the mscgen tool resides. If left empty the tool is assumed to be found in the
-# default search path.
-
-MSCGEN_PATH            =
 
 # You can include diagrams made with dia in doxygen documentation. Doxygen will
 # then run dia to produce the diagram and insert it in the documentation. The

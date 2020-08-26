@@ -1,4 +1,4 @@
-/*! \page Horizontal_indexing Horizontal indexing and memory
+/*! \page Horizontal_Indexing Horizontal indexing and memory
 
 \brief Conventions for staggering of variables and loops over 2d/3d arrays
 
