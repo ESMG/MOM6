@@ -87,7 +87,7 @@ elif '-b' in sys.argv:
     sphinx_build_mode = sys.argv[idx+1]
 
 # RTD has a special mode: readthedocs => html
-if sphinx_build_mode = 'readthedocs':
+if sphinx_build_mode == 'readthedocs':
     sphinx_build_mode = 'html'
 
 print("Sphinx-build mode: %s" % (sphinx_build_mode))
