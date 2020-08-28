@@ -50,7 +50,7 @@ If you do not have doxygen, to build a local version of the doxygen processor yo
 
 If you are building the full generated sphinx documentation you will need the following packages in addition to those for doxygen above:
 - libxml2-dev
-- libxslt-dev
+- libxslt-dev (may also be called libxslt1-dev)
 
 (e.g. `apt-get install libxml2-dev libxslt-dev`)
 
@@ -66,35 +66,45 @@ pip install -r requirements.txt
 
 You may need to use `pip3` to install requirements for python3.
 
-Requirements currently lock sphinx to version 1.5.  The latest version of doxygen is 1.8.18.
+Requirements currently look like:
+- Cython (for machines that need to build future or numpy)
+- doxygen 1.8.19
+- sphinx 3.2.1mom6
+- sphinx-rtd-theme
+- sphinx-bibtex 1.0.0
+- sphinx-fortran 1.1.1dev & numpy
+- sphinxcontrib\_autodox-doxygen 0.6.1.dev6
+- flint 0.0.1dev
+
+### Latex/PDF generation
+
+PDF generation requires the following packages
+- texlive-latex-base
+- texlive-latex-recommended
+- texlive-latex-extra
+- latexmk
 
 ## Credits
 
-The sphinx documentation of MOM6 is made possible by modifications by [Angus Gibson](https://github.com/angus-g) to two packages, [sphinx-fortran](https://github.com/angus-g/sphinx-fortran) and [autodoc_doxygen](https://github.com/angus-g/sphinxcontrib-autodoc_doxygen).
+The sphinx documentation of MOM6 is made possible by modifications by [Angus Gibson](https://github.com/angus-g) to two packages, [sphinx-fortran](https://github.com/angus-g/sphinx-fortran) and [autodoc\_doxygen](https://github.com/angus-g/sphinxcontrib-autodoc_doxygen).
 
 ## Troubleshooting
 
-### sphinxcontrib.autodoc_doxygen
+### Latex Math
 
-The value `node.text` can be `None` when passed to `visit_image`.  Edit `site-packages/sphinxcontrib/autodoc_doxygen/xmlutils.py`:
+Good locations to test equations for both latex and MathJax:
+- [LaTex Base](https://latexbase.com/)
+- [MathJax](https://www.mathjax.org/#demo)
 
-```python
-    def visit_image(self, node):
+*eqnarray*
+- Use of `\mbox{}` requires surrounding braces as in {\mbox{}}
+- If a formula needs formatting using `&` you must use eqnarray
+- MathJax does not handle backslashes (`\`) within `\mbox{}`
+  - Wrong (ok in latex): `\mbox{nonpen\_SW}`
+  - Correct: `\mbox{nonpen}\_\mbox{SW}`
 
-        type = None
-        if node.text == None and node.tag == 'image':
-            type = 'image'
-
-        if type == None and len(node.text.strip()):
-            type = 'figure'
-        else:
-            type = 'image'
-```
-
-### MathJax
-
-Only one `\label` is supported per large formula block surrounded by `\[` and `\]`.  At this point, we are not
-certain the references from embedded formulas are working.
+*formula*
+- Math elements within `\mbox{}` requires `$` escaping
 
 ## Install documentation pipeline
 
@@ -107,7 +117,7 @@ Download latest [source](https://www.doxygen.nl/download.html).  Latest is `doxy
 
 ```bash
 tar xzf doxygen-1.8.19.src.tar.gz
-cd doxygen-1.8.18
+cd doxygen-1.8.19
 mkdir build
 cd build
 cmake -G "Unix Makefiles" ..
@@ -118,6 +128,15 @@ sudo make install
 Make install attempts to place the compiled version into /usr/local/bin.  You can link to a
 specific executable within the virtual environment.   At this point we also recommend
 renaming `doxygen` to `doxygen-1.8.19` within `/usr/local/bin`.
+
+### Read the Docs
+
+The [Read the Docs](https://readthedocs.org/) (RTD) site uses a virtual machine (VM) for processing documentation.  The VM is of
+os architecture type x86\_64.  A doxygen binary can be compiled and included in our git repo
+for use in ReadTheDocs.  The defualt doxygen in use is 1.8.13 which produces XML that does not work for our use.  We
+supply a compiled binary version 1.8.19 that provide better XML.  However, there are still some shortcomings.
+
+NOTE: Using modified python modules on RTD is possible through careful crafting of the requirements.txt file.  It is impossible to replace system binaries or compile code on RTD.  It is possible to ship replacement binaries that can be run from the repo.
 
 ### python3 virtual enviroment
 
@@ -135,23 +154,26 @@ The `deactivate` command allows you to exit from the virtual environment.
 ### debugging
 
 A useful commnad line tool for debugging sphinx and extensions is the python debugger.
-Add the following line to stop the program at that point for debugging.
+Add the following line to stop to any portion of the python code to create a break
+point.
 
 ```python
 import pdb; pdb.set_trace()
 ```
 
+Run `make html` without redirection to a log file.
+
 ## Example execution
 
-This assumes use of the example above.
+The following example assumes a virtual environment as setup above using `mom6Doc`.
+The same environment is possible using anaconda.
 
 ```
 $ source venv/mom6Doc/bin/activate
 (mom6Doc) $ cd docs
 (mom6Doc) $ make clean
-(mom6Doc) $ make html >& _build/html_log.txt
-# If you have latex installed, you can build the pdf
-(mom6Doc) $ make latexpdf >& _build/latex_log.txt
+(mom6Doc) $ make html >& \_build/html\_log.txt
+(mom6Doc) $ make latexpdf >& \_build/latex\_log.txt
 ```
 
 The last command may appear to hang.  On error, latex will request input from the keyboard.

@@ -12,25 +12,14 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import sys
-import os
+import os, sys
+import shutil
 import subprocess
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #sys.path.insert(0, os.path.abspath('.'))
-
-# Create API documentation
-if os.environ.get('NCAR_FORK'):
-    doxygenize = 'doxygen ncar/Doxyfile_ncar_rtd'
-else:
-    doxygenize = 'doxygen Doxyfile_rtd'
-if os.path.exists('./doxygen/bin/doxygen'): doxygenize = './doxygen/bin/'+doxygenize
-if os.path.exists('./bin/doxygen'): doxygenize = './bin/'+doxygenize
-print("Doxygen:",doxygenize)
-return_code = subprocess.call(doxygenize, shell=True)
-if return_code != 0: sys.exit(return_code)
 
 # -- Custom configuration values and roles -----------------------------------
 from docutils import nodes
@@ -43,10 +32,82 @@ def latexPassthru(name, rawtext, text, lineno, inliner, options={}, content=[]):
 
     return [node],[]
 
+# -- Auto detect runs on readthedocs.org -------------------------------------
+running_on_rtd = False
+
+# Get current doxygen version
+out = check_output(["doxygen","-v"])
+doxygen_version = out.strip().decode('utf-8')
+print("Current doxygen version: %s" % (doxygen_version))
+
+# Detect if we are running on readthedocs.org
+out = check_output(["pwd"])
+out = out.strip().decode('utf-8')
+# On RTD you would see something like:
+# /home/docs/checkouts/readthedocs.org/user_builds/mom6devesmgnew/checkouts/latest/docsNew
+if out.find('readthedocs.org') >= 0:
+    running_on_rtd = True
+
+# -- Clean out generated content ---------------------------------------------
+
+# Running build-sphinx for html and latexpdf requires a rebuild of auto
+# generated content.  Intermediate rendering for html and pdf are very
+# different.  For each pass through build-sphinx, we remove intermediate
+# content.
+
+if os.path.isdir("api/generated"):
+    shutil.rmtree("api/generated/")
+
+if os.path.isdir("xml"):
+    shutil.rmtree("xml")
+
+if os.path.isfile("MOM6.tags"):
+    os.unlink("MOM6.tags")
+
+# -- Switching around doxygen configuration files ----------------------------
+
+# Default binary and configuration file
+doxygen_bin = 'doxygen'
+doxygen_conf = 'Doxyfile_rtd'
+
+if os.environ.get('NCAR_FORK'):
+    doxygen_conf = 'ncar/Doxyfile_ncar_rtd'
+
+if os.path.exists('./doxygen/bin/doxygen'):
+    doxygen_bin = './doxygen/bin/doxygen'
+
+# User specified binary and configuration file
+if os.environ.get('DOXYGEN_BIN'):
+    if os.path.exists(os.environ.get('DOXYGEN_BIN')):
+        doxygen_bin = os.environ.get('DOXYGEN_BIN')
+if os.environ.get('DOXYGEN_CONF'):
+    if os.path.exists(os.environ.get('DOXYGEN_CONF')):
+        doxygen_conf = os.environ.get('DOXYGEN_CONF')
+
+# This is specific for RTD docker instance
+# RTD is os arch type x86_64
+if running_on_rtd:
+    # We want to ensure we are using 1.8.19.  If it is not 1.8.19, attempt to
+    # use the binary shipped with our git repo
+    if doxygen_version != '1.8.19':
+        if os.path.exists('./bin/doxygen'):
+            doxygen_bin = './bin/doxygen'
+
+# Finally, run with given command and configuration files
+out = check_output([doxygen_bin,"-v"])
+doxygen_version = out.strip().decode('utf-8')
+print("Reported doxygen version: %s" % (doxygen_version))
+doxygenize = "%s %s" (doxygen_bin, doxygen_conf)
+print("Running: %s" % (doxygenize))
+return_code = subprocess.call(doxygenize, shell=True)
+if return_code != 0: sys.exit(return_code)
+
 # -- Determine how sphinx-build was called -----------------------------------
 
-# Determine how sphinx-build called.  This is needed to drive
+# Determine how sphinx-build called.  This is helps create proper content
+# for html vs latex/pdf
 sphinx_build_mode = "undefined"
+
 # hunt for -M (or -b) and then we want the argument after it
 #import pdb; pdb.set_trace()
 if '-M' in sys.argv:
@@ -118,7 +179,7 @@ release = '0.1'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = ['_build','src']
+exclude_patterns = ['_build', 'src', 'Thumbs.db', '.DS_Store']
 
 # The reST default role (used for this markup: `text`) to use for all
 # documents.
@@ -137,7 +198,10 @@ exclude_patterns = ['_build','src']
 
 # The name of the Pygments (syntax highlighting) style to use.
 # RTD: try default? does it matter?
-pygments_style = 'sphinx'
+if running_on_rtd:
+    pygments_style = 'default'
+else:
+    pygments_style = 'sphinx'
 
 # A list of ignored prefixes for module index sorting.
 #modindex_common_prefix = []
@@ -150,7 +214,6 @@ pygments_style = 'sphinx'
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-
 html_theme = 'sphinx_rtd_theme'
 
 # Theme options are theme-specific and customize the look and feel of a theme
@@ -231,8 +294,11 @@ html_theme = 'sphinx_rtd_theme'
 # Output file base name for HTML help builder.
 htmlhelp_basename = 'MOM6doc'
 
-
 # -- Options for LaTeX output ---------------------------------------------
+
+# authors variable automatically adds \\and within sphinx
+authors = u'Alistair Adcroft, Robert Hallberg, Stephen Griffies, Matthew Harrison, Brandon Reichl, Niki Zadeh, John Krasting, Nic Hannah'
+latex_authors = authors.replace(', ', '\\and ').replace(' and ', '\\and and ')
 
 latex_elements = {
 # The paper size ('letterpaper' or 'a4paper').
@@ -250,7 +316,7 @@ latex_elements = {
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
   ('index', 'MOM6.tex', u'MOM6 Documentation',
-   u'Alistair Adcroft, Robert Hallberg, Stephen Griffies, Matthew Harrison, Brandon Reichl, Niki Zadeh, John Krasting, Nic Hannah', 'manual'),
+   latex_authors, 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -280,12 +346,11 @@ latex_documents = [
 # (source start file, name, description, authors, manual section).
 man_pages = [
     ('index', 'mom6', u'MOM6 Documentation',
-     [u'Alistair Adcroft, Robert Hallberg, Stephen Griffies, Matthew Harrison, Brandon Reichl, Niki Zadeh, John Krasting, Nic Hannah'], 1)
+     [authors], 1)
 ]
 
 # If true, show URL addresses after external links.
 #man_show_urls = False
-
 
 # -- Options for Texinfo output -------------------------------------------
 
@@ -294,7 +359,7 @@ man_pages = [
 #  dir menu entry, description, category)
 texinfo_documents = [
   ('index', 'MOM6', u'MOM6 Documentation',
-   u'Alistair Adcroft, Robert Hallberg, Stephen Griffies, Matthew Harrison, Brandon Reichl, Niki Zadeh, John Krasting, Nic Hannah', 'MOM6', 'One line description of project.',
+   authors, 'One line description of project.',
    'Miscellaneous'),
 ]
 

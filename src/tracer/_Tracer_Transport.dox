@@ -8,13 +8,13 @@ will be in the cell at the end of the timestep.
 Given a piecewise polynomial description of the tracer concentration, the new tracer cell
 concentration is the average of the fluid that will be in the cell after a timestep.
 
-\f[
+\f{eqnarray}
   \int_{x_{i-1/2}}^{x_{i+1/2}} A_i^{n+1} (x) dx =
   \int_{x_{i-1/2 - u \Delta t}}^{x_{i+1/2-u\Delta t}} A_i^{n} (x) dx &= \mbox{} \\
   \int_{x_{i-1/2}}^{x_{i+1/2}} A_i^{n} (x) dx -
   \int_{x_{i+1/2 - u \Delta t}}^{x_{i+1/2}} A_i^{n} (x) dx &+
   \int_{x_{i-1/2 - u \Delta t}}^{x_{i-1/2}} A_i^{n} (x) dx
-\f]
+\f}
 
 Fluxes are found by analytically integrating the profile over the distance that is
 swept past the face within a timestep.

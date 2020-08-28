@@ -1,8 +1,8 @@
 version: 2
 
 # Extra formats
-# formats:
-#  - pdf
+formats:
+  - pdf
 
 # Build documentation
 sphinx:
