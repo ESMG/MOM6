@@ -98,7 +98,7 @@ if running_on_rtd:
 out = check_output([doxygen_bin,"-v"])
 doxygen_version = out.strip().decode('utf-8')
 print("Reported doxygen version: %s" % (doxygen_version))
-doxygenize = "%s %s" (doxygen_bin, doxygen_conf)
+doxygenize = "%s %s" % (doxygen_bin, doxygen_conf)
 print("Running: %s" % (doxygenize))
 return_code = subprocess.call(doxygenize, shell=True)
 if return_code != 0: sys.exit(return_code)
