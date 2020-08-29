@@ -153,11 +153,11 @@ source_suffix = '.rst'
 #source_encoding = 'utf-8-sig'
 
 # The master toctree document.
-master_doc = 'index'
+master_doc = 'doc/index'
 
 # General information about the project.
 project = u'MOM6'
-copyright = u'2017, MOM6 developers'
+copyright = u'2017-2020, MOM6 developers'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
