@@ -801,34 +801,36 @@ WARN_LOGFILE           = _build/doxygen_log.txt
 # spaces.
 # Note: If this tag is empty the current directory is searched.
 
-#INPUT                  = ../src \
-#                         ../config_src/solo_driver \
-#                         ../config_src/dynamic_symmetric \
-#                         ../config_src/external \
-#                         ../config_src/coupled_driver
-
-# Basic testing units below
-
-#INPUT                  = ../src/equation_of_state
-
-#INPUT                  = ../src/ALE \
-#                         ../config_src/solo_driver \
-#                         ../config_src/dynamic_symmetric \
-#                         ../config_src/external \
-#                         ../config_src/coupled_driver
-
 INPUT                  = \
-        ../src/ALE/_ALE.dox \
-        ../src/ALE/_ALE_timestep.dox \
-        ../src/core/_General_coordinate.dox \
-        ../src/core/_Governing.dox \
-        ../src/core/_Specifics.dox \
-        ../src/core/_Notation.dox \
-        ../src/tracer/_Tracer_Transport.dox \
-        ../src/tracer/_Tracer_timestep.dox \
-        ../src/ALE/MOM_ALE.F90 \
-        ../src/core/MOM_forcing_type.F90 \
-        ../src/equation_of_state/MOM_EOS.F90
+../src/tracer/_Horizontal_diffusion.dox \
+../src/tracer/_Advection.dox \
+../src/tracer/_Tracer_Transport.dox \
+../src/tracer/_Tracer_timestep.dox \
+../src/tracer/_Vertical_diffusion.dox \
+../src/tracer/_Discrete_tracer.dox \
+../src/core/_Notation.dox \
+../src/core/_Specifics.dox \
+../src/core/_Discrete_grids.dox \
+../src/core/_Time_Filter.dox \
+../src/core/_Energetic_consistancy.dox \
+../src/core/_PPM.dox \
+../src/core/_Barotropic_Momentum.dox \
+../src/core/_Discrete_momentum.dox \
+../src/core/_Finite_difference.dox \
+../src/core/_Baroclinic_Momentum.dox \
+../src/core/_Governing.dox \
+../src/core/_General_coordinate.dox \
+../src/framework/_Global_grids.dox \
+../src/framework/_Diagnostics.dox \
+../src/framework/_Regional_grids.dox \
+../src/framework/_Horizontal_indexing.dox \
+../src/framework/_Vertical_grids.dox \
+../src/framework/_Runtime_parameter_system.dox \
+../src/ALE/_ALE_timestep.dox \
+../src/ALE/_ALE.dox \
+../src/ALE/MOM_ALE.F90 \
+../src/core/MOM_forcing_type.F90 \
+../src/equation_of_state/MOM_EOS.F90
        
 
 # This tag can be used to specify the character encoding of the source files

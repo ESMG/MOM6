@@ -28,9 +28,9 @@ from docutils import nodes
 def setup(app):
     app.add_config_value('sphinx_build_mode', '', 'env')
     app.add_role('latex', latexPassthru)
+
 def latexPassthru(name, rawtext, text, lineno, inliner, options={}, content=[]):
     node = nodes.raw('',rawtext[8:-1],format='latex')
-
     return [node],[]
 
 # -- Auto detect runs on readthedocs.org -------------------------------------
@@ -64,6 +64,11 @@ if os.path.isdir("xml"):
 
 if os.path.isfile("MOM6.tags"):
     os.unlink("MOM6.tags")
+
+# Make sure there is a _build directory (this might be different
+# so we can do better than blindly check here) TODO
+if not(os.path.isdir("_build")):
+    os.makedirs("_build")
 
 # -- Switching around doxygen configuration files ----------------------------
 
