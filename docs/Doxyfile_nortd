@@ -725,7 +725,7 @@ LAYOUT_FILE            = layout.xml
 # LATEX_BIB_STYLE. To use this feature you need bibtex and perl available in the
 # search path. See also \cite for info how to create references.
 
-CITE_BIB_FILES         = doc/ocean.bib doc/references.bib doc/zotero.bib
+CITE_BIB_FILES         = ocean.bib references.bib zotero.bib
 
 #---------------------------------------------------------------------------
 # Configuration options related to warning and progress messages
