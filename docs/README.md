@@ -187,7 +187,7 @@ to process the MOM6 documentation.  The versions are tagged and placed into the 
 
 | Source | Modified | Version |
 | ----------- | -------- | ------- |
-| [sphinx](https://github.com/sphinx-doc/sphinx) => [sphinx-3.2.1mom6.1](https://github.com/jr3cermak/sphinx) | 3.2.1mom6.1 |
+| [sphinx](https://github.com/sphinx-doc/sphinx) | [sphinx-3.2.1mom6.1](https://github.com/jr3cermak/sphinx) | 3.2.1mom6.1 |
 | [sphinxcontrib-autodoc-doxygen](https://github.com/rmcgibbo/sphinxcontrib-autodoc_doxygen) | [sphinxcontrib-autodoc-doxygen](https://github.com/jr3cermak/sphinxcontrib-autodoc_doxygen) | 0.7.2 |
 | [sphinx-fortran](https://github.com/VACUMM/sphinx-fortran) | [sphinx-fortran](https://github.com/jr3cermak/sphinx-fortran) | 1.2.0 |
 | [flint](https://github.com/marshallward/flint) | [flint](https://github.com/jr3cermak/flint) | 0.0.1 |
