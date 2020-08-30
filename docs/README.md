@@ -147,6 +147,8 @@ pip3 install -r requirements.txt
 
 The `deactivate` command allows you to exit from the virtual environment.
 
+NOTE: Read the Docs will not upgrade sphinx if `#egg=` is specified in the `requirements.txt` file.
+
 ### debugging
 
 A useful commnad line tool for debugging sphinx and extensions is the python debugger.
