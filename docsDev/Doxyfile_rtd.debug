@@ -829,6 +829,7 @@ INPUT                  = \
 ../src/ALE/_ALE_timestep.dox \
 ../src/ALE/_ALE.dox \
 ../src/ALE/MOM_ALE.F90 \
+../src/core/MOM.F90 \
 ../src/core/MOM_forcing_type.F90 \
 ../src/equation_of_state/MOM_EOS.F90
        
@@ -1961,7 +1962,7 @@ XML_OUTPUT             = xml
 # The default value is: YES.
 # This tag requires that the tag GENERATE_XML is set to YES.
 
-XML_PROGRAMLISTING     = NO
+XML_PROGRAMLISTING     = YES
 
 #---------------------------------------------------------------------------
 # Configuration options related to the DOCBOOK output

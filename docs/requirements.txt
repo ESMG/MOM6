@@ -1,7 +1,7 @@
-git+https://github.com/jr3cermak/sphinx.git@v3.2.1mom6
-git+https://github.com/jr3cermak/sphinxcontrib-autodoc_doxygen.git@dev#egg=sphinxcontrib-autodoc_doxygen
-git+https://github.com/jr3cermak/sphinx-fortran.git@dev#egg=sphinx-fortran
-git+https://github.com/jr3cermak/flint.git@dev#egg=flint
+git+https://github.com/jr3cermak/sphinx.git@v3.2.1mom6.1#egg=Sphinx
+git+https://github.com/jr3cermak/sphinxcontrib-autodoc_doxygen.git@0.7.2#egg=sphinxcontrib-autodoc_doxygen
+git+https://github.com/jr3cermak/sphinx-fortran.git@1.2.0#egg=sphinx-fortran
+git+https://github.com/jr3cermak/flint.git@0.0.1#egg=flint
 sphinx-rtd-theme
 sphinxcontrib-bibtex
 # requirements.txt not working from sphinx-fortran

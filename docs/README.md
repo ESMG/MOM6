@@ -66,15 +66,15 @@ pip install -r requirements.txt
 
 You may need to use `pip3` to install requirements for python3.
 
-Requirements currently look like:
+Requirements:
 - Cython (for machines that need to build future or numpy)
-- doxygen 1.8.19
-- sphinx 3.2.1mom6
+- numpy
+- sphinx
 - sphinx-rtd-theme
-- sphinx-bibtex 1.0.0
-- sphinx-fortran 1.1.1dev & numpy
-- sphinxcontrib\_autodox-doxygen 0.6.1.dev6
-- flint 0.0.1dev
+- sphinx-bibtex
+- sphinx-fortran
+- sphinxcontrib\_autodox-doxygen
+- flint
 
 ### Latex/PDF generation
 
@@ -83,10 +83,6 @@ PDF generation requires the following packages
 - texlive-latex-recommended
 - texlive-latex-extra
 - latexmk
-
-## Credits
-
-The sphinx documentation of MOM6 is made possible by modifications by [Angus Gibson](https://github.com/angus-g) to two packages, [sphinx-fortran](https://github.com/angus-g/sphinx-fortran) and [autodoc\_doxygen](https://github.com/angus-g/sphinxcontrib-autodoc_doxygen).
 
 ## Troubleshooting
 
@@ -172,8 +168,8 @@ The same environment is possible using anaconda.
 $ source venv/mom6Doc/bin/activate
 (mom6Doc) $ cd docs
 (mom6Doc) $ make clean
-(mom6Doc) $ make html >& \_build/html\_log.txt
-(mom6Doc) $ make latexpdf >& \_build/latex\_log.txt
+(mom6Doc) $ make html >& _build/html_log.txt
+(mom6Doc) $ make latexpdf >& _build/latex_log.txt
 ```
 
 The last command may appear to hang.  On error, latex will request input from the keyboard.
@@ -182,3 +178,19 @@ are reached.
 
 Once the documentation is built, you can use a web browser to look around in the `_build`
 directory.
+
+# Credits
+
+## 2020
+The documentation pipeline was upgraded by [Rob Cermak](https://github.com/jr3cermak) and [Marshall Ward](https://github.com/marshallward).  Four modified modules are required
+to process the MOM6 documentation.  The versions are tagged and placed into the production version of `requirements.txt`.  Development versions may be found in the `dev` branch.
+
+| Source | Modified | Version |
+| ----------- | -------- | ------- |
+| [sphinx](https://github.com/sphinx-doc/sphinx) => [sphinx-3.2.1mom6.1](https://github.com/jr3cermak/sphinx) | 3.2.1mom6.1 |
+| [sphinxcontrib-autodoc-doxygen](https://github.com/rmcgibbo/sphinxcontrib-autodoc_doxygen) | [sphinxcontrib-autodoc-doxygen](https://github.com/jr3cermak/sphinxcontrib-autodoc_doxygen) | 0.7.2 |
+| [sphinx-fortran](https://github.com/VACUMM/sphinx-fortran) | [sphinx-fortran](https://github.com/jr3cermak/sphinx-fortran) | 1.2.0 |
+| [flint](https://github.com/marshallward/flint) | [flint](https://github.com/jr3cermak/flint) | 0.0.1 |
+
+## 2017
+The sphinx documentation of MOM6 is made possible by modifications by [Angus Gibson](https://github.com/angus-g) to two packages, [sphinx-fortran](https://github.com/angus-g/sphinx-fortran) and [autodoc\_doxygen](https://github.com/angus-g/sphinxcontrib-autodoc_doxygen).

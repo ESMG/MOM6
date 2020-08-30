@@ -207,7 +207,7 @@ exclude_patterns = ['_build', 'src', 'Thumbs.db', '.DS_Store']
 if running_on_rtd:
     pygments_style = 'default'
 else:
-    pygments_style = 'sphinx'
+    pygments_style = 'default'
 
 # A list of ignored prefixes for module index sorting.
 #modindex_common_prefix = []
