@@ -1,3 +1,4 @@
+-r sphinx3.txt
 git+https://github.com/jr3cermak/sphinx.git@dev#egg=Sphinx
 git+https://github.com/jr3cermak/sphinxcontrib-autodoc_doxygen.git@0.7.2#egg=sphinxcontrib-autodoc_doxygen
 git+https://github.com/jr3cermak/sphinx-fortran.git@1.2.0#egg=sphinx-fortran
