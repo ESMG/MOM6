@@ -94,8 +94,9 @@ contains
   !> Initializes the generic tracer packages and adds their tracers to the list
   !! Adds the tracers in the list of generic tracers to the set of MOM tracers (i.e., MOM-register them)
   !! Register these tracers for restart
-  function register_MOM_generic_tracer(HI, GV, param_file, CS, tr_Reg, restart_CS)
+  function register_MOM_generic_tracer(HI, G, GV, param_file, CS, tr_Reg, restart_CS)
     type(hor_index_type),       intent(in)   :: HI         !< Horizontal index ranges
+    type(ocean_grid_type),      intent(in)   :: G          !< The ocean's grid structure
     type(verticalGrid_type),    intent(in)   :: GV         !< The ocean's vertical grid structure
     type(param_file_type),      intent(in)   :: param_file !< A structure to parse for run-time parameters
     type(MOM_generic_tracer_CS), pointer     :: CS         !< Pointer to the control structure for this module
@@ -176,7 +177,7 @@ contains
     ! Initialize all generic tracers
     !
     call generic_tracer_init(HI%isc,HI%iec,HI%jsc,HI%jec,HI%isd,HI%ied,HI%jsd,HI%jed,&
-         GV%ke,ntau,axes,grid_tmask,grid_kmt,set_time(0,0))
+         GV%ke,ntau,axes,grid_tmask,grid_kmt,set_time(0,0),G%geolonT,G%geolatT)
 
 
     !
@@ -420,7 +421,7 @@ contains
       endif
     enddo ; enddo
     call g_tracer_set_common(G%isc,G%iec,G%jsc,G%jec,G%isd,G%ied,G%jsd,G%jed,&
-                             GV%ke,1,CS%diag%axesTL%handles,grid_tmask,grid_kmt,day)
+                             GV%ke,1,CS%diag%axesTL%handles,grid_tmask,grid_kmt,day,G%geolonT,G%geolatT)
 
     ! Register generic tracer modules diagnostics
 
@@ -558,12 +559,12 @@ contains
         (G%US%Q_to_J_kg == 1.0) .and. (G%US%RZ_to_kg_m2 == 1.0) .and. &
         (US%C_to_degC == 1.0) .and. (US%S_to_ppt == 1.0)) then
       ! Avoid unnecessary copies when no unit conversion is needed.
-      call generic_tracer_source(tv%T, tv%S, rho_dzt, dzt, dz_ml, G%isd, G%jsd, 1, dt, &
+      call generic_tracer_source(tv%T, tv%S, tv, rho_dzt, dzt, dz_ml, G%isd, G%jsd, 1, dt, &
                G%areaT, get_diag_time_end(CS%diag), &
                optics%nbands, optics%max_wavelength_band, optics%sw_pen_band, optics%opacity_band, &
                internal_heat=tv%internal_heat, frunoff=fluxes%frunoff, sosga=sosga)
     else
-      call generic_tracer_source(US%C_to_degC*tv%T, US%S_to_ppt*tv%S, rho_dzt, dzt, dz_ml, G%isd, G%jsd, 1, dt, &
+      call generic_tracer_source(US%C_to_degC*tv%T, US%S_to_ppt*tv%S, tv, rho_dzt, dzt, dz_ml, G%isd, G%jsd, 1, dt, &
                G%US%L_to_m**2*G%areaT(:,:), get_diag_time_end(CS%diag), &
                optics%nbands, optics%max_wavelength_band, &
                sw_pen_band=G%US%QRZ_T_to_W_m2*optics%sw_pen_band(:,:,:), &

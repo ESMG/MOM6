@@ -259,7 +259,7 @@ subroutine call_tracer_register(G, GV, US, param_file, CS, tr_Reg, restart_CS)
     register_CFC_cap(G%HI, GV, param_file, CS%CFC_cap_CSp, &
                         tr_Reg, restart_CS)
   if (CS%use_MOM_generic_tracer) CS%use_MOM_generic_tracer = &
-    register_MOM_generic_tracer(G%HI, GV, param_file, CS%MOM_generic_tracer_CSp, &
+    register_MOM_generic_tracer(G%HI, G, GV, param_file, CS%MOM_generic_tracer_CSp, &
                                 tr_Reg, restart_CS)
   if (CS%use_pseudo_salt_tracer) CS%use_pseudo_salt_tracer = &
     register_pseudo_salt_tracer(G%HI, GV, param_file, CS%pseudo_salt_tracer_CSp, &
