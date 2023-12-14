@@ -1737,13 +1737,13 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
       'm s-1', conversion=US%L_T_to_m_s)
   if (CS%use_Bodner) then
     CS%id_wpup = register_diag_field('ocean_model', 'MLE_wpup', diag%axesT1, Time, &
-        'Vertical turbulent momentum flux in Bodner mixed layer restratificiation parameterization', &
+        'Vertical turbulent momentum flux in Bodner mixed layer restratification parameterization', &
         'm2 s-2', conversion=US%L_to_m*GV%H_to_m*US%s_to_T**2)
     CS%id_ustar = register_diag_field('ocean_model', 'MLE_ustar', diag%axesT1, Time, &
-        'Surface turbulent friction velicity, u*, in Bodner mixed layer restratificiation parameterization', &
+        'Surface turbulent friction velocity, u*, in Bodner mixed layer restratification parameterization', &
         'm s-1', conversion=(US%Z_to_m*US%s_to_T))
     CS%id_bflux = register_diag_field('ocean_model', 'MLE_bflux', diag%axesT1, Time, &
-        'Surface buoyancy flux, B0, in Bodner mixed layer restratificiation parameterization', &
+        'Surface buoyancy flux, B0, in Bodner mixed layer restratification parameterization', &
         'm2 s-3', conversion=(US%Z_to_m**2*US%s_to_T**3))
     CS%id_lfbod = register_diag_field('ocean_model', 'lf_bodner', diag%axesT1, Time, &
         'Front length in Bodner mixed layer restratificiation parameterization', &  
