@@ -78,7 +78,8 @@ contains
     integer,                        intent(in) :: jlb    !< Lower bounds of y extent of input arrays on data domain
     real, dimension(ilb:,jlb:,:),   intent(in) :: Temp   !< Potential temperature [deg C]
     real, dimension(ilb:,jlb:,:),   intent(in) :: Salt   !< Salinity [psu]
-    type(thermo_var_ptrs),          intent(in) :: tv     !< structure containing pointers to available thermodynamic fields
+    type(thermo_var_ptrs),          intent(in) :: tv     !< structure containing pointers to available
+                                                         !! thermodynamic fields
     real, dimension(ilb:,jlb:,:),   intent(in) :: rho_dzt !< Mass per unit area of each layer [kg m-2]
     real, dimension(ilb:,jlb:,:),   intent(in) :: dzt    !< Ocean layer thickness [m]
     real, dimension(ilb:,jlb:),     intent(in) :: hblt_depth !< Boundary layer depth [m]
