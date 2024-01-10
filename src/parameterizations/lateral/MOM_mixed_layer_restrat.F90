@@ -944,7 +944,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
                       (G%CoriolisBu(I-1,J) + G%CoriolisBu(I,J-1))))**2, absurdly_small_freq2)
     lf_bodner_diag(i,j) = 0.25 * (( CS%mstar * u_star3 + CS%nstar * w_star3 )**two_thirds  & ! (this line m2 s-2)
             * ( US%m_to_L * GV%m_to_H * US%T_to_s**2 )) &  ! [L H s2 m-2 T-2 ~> 1 or kg m-3]
-            / (f2_h * little_h(i,j))! [T-2 H  ~> m s-2]
+            / (f2_h * (max(little_h(i,j), GV%Angstrom_H)))! [T-2 H  ~> m s-2]
 
   enddo ; enddo
 
