@@ -1625,6 +1625,9 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
   CS%use_Bodner = .false.
 
   call get_param(param_file, mdl, "DEBUG", CS%debug, default=.false., do_not_log=.true.)
+  call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
+      "This sets the default value for the various _ANSWER_DATE parameters.", &
+      default=99991231, do_not_log=.true.)
   call openParameterBlock(param_file,'MLE') ! Prepend MLE% to all parameters
   if (GV%nkml==0) then
     call get_param(param_file, mdl, "USE_BODNER23", CS%use_Bodner, &
@@ -1666,9 +1669,6 @@ logical function mixedlayer_restrat_init(Time, G, GV, US, param_file, diag, CS, 
              "BLD, when the latter is shallower than the running mean. A value of 0 "//&
              "instantaneously sets the running mean to the current value filtered BLD.", &
              units="s", default=0., scale=US%s_to_T)
-    call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
-             "This sets the default value for the various _ANSWER_DATE parameters.", &
-             default=99991231)
     call get_param(param_file, mdl, "ML_RESTRAT_ANSWER_DATE", CS%answer_date, &
              "The vintage of the order of arithmetic and expressions in the mixed layer "//&
              "restrat calculations.  Values below 20240201 recover the answers from the end "//&
