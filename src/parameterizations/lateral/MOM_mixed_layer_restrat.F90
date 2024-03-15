@@ -975,15 +975,6 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
     wpup(i,j) = rmean2ts(wpup(i,j), CS%wpup_filtered(i,j), &
                          CS%BLD_growing_Tfilt, CS%BLD_decaying_Tfilt, dt)
     CS%wpup_filtered(i,j) = wpup(i,j)
-
-    ! LD: Calculating Frontlength lf_bodner, used in B22 formula (eq 24).
-    ! LD: absurdly_small_freq2 to prevent division by 0
-    f2_h = max((0.25*((G%CoriolisBu(I,J)  + G%CoriolisBu(I-1,J-1)) + &
-                      (G%CoriolisBu(I-1,J) + G%CoriolisBu(I,J-1))))**2, absurdly_small_freq2)
-    lf_bodner_diag(i,j) = 0.25 * (( CS%mstar * u_star3 + CS%nstar * w_star3 )**two_thirds  & ! (this line m2 s-2)
-            * ( US%m_to_L * GV%m_to_H * US%T_to_s**2 )) &  ! [L H s2 m-2 T-2 ~> 1 or kg m-3]
-            / (f2_h * (max(little_h(i,j), GV%Angstrom_H)))! [T-2 H  ~> m s-2]
-
   enddo ; enddo
 
   if (CS%id_lfbod > 0) then
