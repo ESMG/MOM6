@@ -1285,7 +1285,7 @@ subroutine post_surface_dyn_diags(IDs, G, diag, sfc_state, ssh)
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: speed  ! The surface speed [L T-1 ~> m s-1]
   real :: ssu_east(SZI_(G),SZJ_(G))        ! Surface velocity due east component [L T-1 ~> m s-1]
-  real :: ssv_north(SZI_(G),SZJ_(G))       ! Surface velocity due norht component [L T-1 ~> m s-1]
+  real :: ssv_north(SZI_(G),SZJ_(G))       ! Surface velocity due north component [L T-1 ~> m s-1]
   integer :: i, j, is, ie, js, je
 
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
@@ -1309,10 +1309,10 @@ subroutine post_surface_dyn_diags(IDs, G, diag, sfc_state, ssh)
 
   if (IDs%id_ssu_east > 0 .or. IDs%id_ssv_north > 0) then
     do j=js,je ; do i=is,ie
-      ssu_east(i,j) = (0.5*(sfc_state%u(I-1,j) + sfc_state%u(I,j))) * G%cos_rot(i,j) + &
-                      (0.5*(sfc_state%v(i,J-1) + sfc_state%v(i,J))) * G%sin_rot(i,j)
-      ssv_north(i,j) = - (0.5*(sfc_state%u(I-1,j) + sfc_state%u(I,j))) * G%sin_rot(i,j) + &
-                       (0.5*(sfc_state%v(i,J-1) + sfc_state%v(i,J))) * G%cos_rot(i,j)
+      ssu_east(i,j) = ((0.5*(sfc_state%u(I-1,j) + sfc_state%u(I,j))) * G%cos_rot(i,j)) + &
+                      ((0.5*(sfc_state%v(i,J-1) + sfc_state%v(i,J))) * G%sin_rot(i,j))
+      ssv_north(i,j) = ((0.5*(sfc_state%v(i,J-1) + sfc_state%v(i,J))) * G%cos_rot(i,j)) - &
+                       ((0.5*(sfc_state%u(I-1,j) + sfc_state%u(I,j))) * G%sin_rot(i,j))
     enddo ; enddo
     if (IDs%id_ssu_east > 0 ) call post_data(IDs%id_ssu_east, ssu_east, diag, mask=G%mask2dT)
     if (IDs%id_ssv_north > 0 ) call post_data(IDs%id_ssv_north, ssv_north, diag, mask=G%mask2dT)
@@ -1928,7 +1928,7 @@ subroutine register_surface_diags(Time, G, US, IDs, diag, tv)
       'Sea Surface Speed', 'm s-1', conversion=US%L_T_to_m_s)
   IDs%id_ssu_east = register_diag_field('ocean_model', 'ssu_east', diag%axesT1, Time, &
       'Eastward velocity', 'm s-1', conversion=US%L_T_to_m_s)
-  IDs%id_ssv_north = register_diag_field('ocean_model', 'ssv_north', diag%axesCvL, Time, &
+  IDs%id_ssv_north = register_diag_field('ocean_model', 'ssv_north', diag%axesT1, Time, &
       'Northward velocity', 'm s-1', conversion=US%L_T_to_m_s)
 
   if (associated(tv%T)) then
