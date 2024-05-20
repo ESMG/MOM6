@@ -54,6 +54,10 @@ type, public :: Kappa_shear_CS ; private
   real    :: lambda2_N_S     !<   The square of the ratio of the coefficients of
                              !! the buoyancy and shear scales in the diffusivity
                              !! equation, 0 to eliminate the shear scale [nondim].
+  real    :: beta            !<   A coefficient to rescale the distance to the nearest 
+                             !! solid boundary. This adjustment is to account for 
+                             !! regions where 3 dimensional turbulence prevents the 
+                             !! growth of shear instabilies [nondim].
   real    :: TKE_bg          !<   The background level of TKE [Z2 T-2 ~> m2 s-2].
   real    :: kappa_0         !<   The background diapycnal diffusivity [H Z T-1 ~> m2 s-1 or Pa s]
   real    :: kappa_seed      !<   A moderately large seed value of diapycnal diffusivity that
@@ -794,7 +798,9 @@ subroutine kappa_shear_column(kappa, tke, dt, nzc, f2, surface_pres, hlay, dz_la
   do K=nzc,2,-1
     dist_from_bot = dist_from_bot + dz_lay(k)
     h_from_bot = h_from_bot + hlay(k)
-    I_L2_bdry(K) = ((dist_from_top(K) + dist_from_bot) * (h_from_top(K) + h_from_bot)) / &
+    !I_L2_bdry(K) = ((dist_from_top(K) + dist_from_bot) * (h_from_top(K) + h_from_bot)) / &
+    !               ((dist_from_top(K) * dist_from_bot) * (h_from_top(K) * h_from_bot))
+    I_L2_bdry(K) = 1/(CS%beta*CS%beta)*((dist_from_top(K) + dist_from_bot) * (h_from_top(K) + h_from_bot)) / &
                    ((dist_from_top(K) * dist_from_bot) * (h_from_top(K) * h_from_bot))
   enddo
 
@@ -1918,6 +1924,11 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
                  "Set this to 0 (the default) to eliminate the shear scale. "//&
                  "This is only used if USE_JACKSON_PARAM is true.", &
                  units="nondim", default=0.0, do_not_log=just_read)
+  call get_param(param_file, mdl, "LZ_RESCALE", CS%beta, &
+                 "A coefficient to rescale the distance to the nearest solid boundary. "//& 
+                 "This adjustment is to account for regions where 3 dimensional turbulence "//&  
+                 "prevents the growth of shear instabilies [nondim].", &
+                 units="nondim", default=1.0) 
   call get_param(param_file, mdl, "KAPPA_SHEAR_TOL_ERR", CS%kappa_tol_err, &
                  "The fractional error in kappa that is tolerated. "//&
                  "Iteration stops when changes between subsequent "//&
