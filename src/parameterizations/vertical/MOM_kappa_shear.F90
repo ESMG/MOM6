@@ -54,7 +54,7 @@ type, public :: Kappa_shear_CS ; private
   real    :: lambda2_N_S     !<   The square of the ratio of the coefficients of
                              !! the buoyancy and shear scales in the diffusivity
                              !! equation, 0 to eliminate the shear scale [nondim].
-  real    :: beta            !<   A coefficient to rescale the distance to the nearest 
+  real    :: lz_rescale      !<   A coefficient to rescale the distance to the nearest 
                              !! solid boundary. This adjustment is to account for 
                              !! regions where 3 dimensional turbulence prevents the 
                              !! growth of shear instabilies [nondim].
@@ -750,6 +750,7 @@ subroutine kappa_shear_column(kappa, tke, dt, nzc, f2, surface_pres, hlay, dz_la
   real :: wt_b          ! The fraction of a layer thickness identified with the interface
                         ! below a layer [nondim]
   real :: k0dt          ! The background diffusivity times the timestep [H Z ~> m2 or kg m-1].
+  real :: I_lz_rescale_sqr ! The inverse of a rescaling factor for L2_bdry (Lz) squared [nondim].
   logical :: valid_dt   ! If true, all levels so far exhibit acceptably small changes in k_src.
   logical :: use_temperature  !  If true, temperature and salinity have been
                         ! allocated and are being used as state variables.
@@ -767,6 +768,8 @@ subroutine kappa_shear_column(kappa, tke, dt, nzc, f2, surface_pres, hlay, dz_la
   gR0 = GV%H_to_RZ * GV%g_Earth
   g_R0 = (US%L_to_Z**2 * GV%g_Earth) / GV%Rho0
   k0dt = dt*CS%kappa_0
+
+  I_lz_rescale_sqr = 1.0; if (CS%lz_rescale > 0) I_lz_rescale_sqr = 1/(CS%lz_rescale*CS%lz_rescale)
 
   tol_dksrc = CS%kappa_src_max_chg
   if (tol_dksrc == 10.0) then
@@ -800,7 +803,7 @@ subroutine kappa_shear_column(kappa, tke, dt, nzc, f2, surface_pres, hlay, dz_la
     h_from_bot = h_from_bot + hlay(k)
     !I_L2_bdry(K) = ((dist_from_top(K) + dist_from_bot) * (h_from_top(K) + h_from_bot)) / &
     !               ((dist_from_top(K) * dist_from_bot) * (h_from_top(K) * h_from_bot))
-    I_L2_bdry(K) = 1/(CS%beta*CS%beta)*((dist_from_top(K) + dist_from_bot) * (h_from_top(K) + h_from_bot)) / &
+    I_L2_bdry(K) = I_lz_rescale_sqr*((dist_from_top(K) + dist_from_bot) * (h_from_top(K) + h_from_bot)) / &
                    ((dist_from_top(K) * dist_from_bot) * (h_from_top(K) * h_from_bot))
   enddo
 
@@ -1924,7 +1927,7 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
                  "Set this to 0 (the default) to eliminate the shear scale. "//&
                  "This is only used if USE_JACKSON_PARAM is true.", &
                  units="nondim", default=0.0, do_not_log=just_read)
-  call get_param(param_file, mdl, "LZ_RESCALE", CS%beta, &
+  call get_param(param_file, mdl, "LZ_RESCALE", CS%lz_rescale, &
                  "A coefficient to rescale the distance to the nearest solid boundary. "//& 
                  "This adjustment is to account for regions where 3 dimensional turbulence "//&  
                  "prevents the growth of shear instabilies [nondim].", &
