@@ -435,12 +435,14 @@ subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
                             !! temperature into degC [degC C-1 ~> 1]
   real,       optional, intent(in)  :: saln_scale !< A multiplicative factor to convert pressure
                             !! into PSU [PSU S-1 ~> 1].
-  real,       optional, intent(in)  :: Z_0p      !< The height at which the pressure is 0 [Z ~> m]
+  real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed), &
+              optional, intent(in)  :: Z_0p      !< The height at which the pressure is 0 [Z ~> m]
 
   ! Local variables
   real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed) :: al0_2d ! A term in the Wright EOS [m3 kg-1]
   real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed) :: p0_2d  ! A term in the Wright EOS [Pa]
   real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed) :: lambda_2d ! A term in the Wright EOS [m2 s-2]
+  real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed) :: z0pres ! The height at which the pressure is zero [Z ~> m]
   real :: al0        ! A term in the Wright EOS [m3 kg-1]
   real :: p0         ! A term in the Wright EOS [Pa]
   real :: lambda     ! A term in the Wright EOS [m2 s-2]
@@ -466,7 +468,6 @@ subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
                      ! with height at the 5 sub-column locations [R L2 T-2 ~> Pa].
   real :: Pa_to_RL2_T2 ! A conversion factor of pressures from Pa to the output units indicated by
                        ! pres_scale [R L2 T-2 Pa-1 ~> 1].
-  real :: z0pres     ! The height at which the pressure is zero [Z ~> m]
   real :: a1s        ! Partly rescaled version of a1 [m3 kg-1 C-1 ~> m3 kg-1 degC-1]
   real :: a2s        ! Partly rescaled version of a2 [m3 kg-1 S-1 ~> m3 kg-1 PSU-1]
   real :: b1s        ! Partly rescaled version of b1 [Pa C-1 ~> Pa degC-1]
@@ -504,7 +505,13 @@ subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
   else
     rho_ref_mks = rho_ref ; I_Rho = 1.0 / rho_0
   endif
-  z0pres = 0.0 ; if (present(Z_0p)) z0pres = Z_0p
+  if (present(Z_0p)) then
+    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+      z0pres(i,j) = Z_0p(i,j)
+    enddo ; enddo
+  else
+    z0pres(:,:) = 0.0
+  endif
 
   a1s = a1 ; a2s = a2
   b1s = b1 ; b2s = b2 ; b3s = b3 ; b4s = b4 ; b5s = b5
@@ -541,7 +548,7 @@ subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
     al0 = al0_2d(i,j) ; p0 = p0_2d(i,j) ; lambda = lambda_2d(i,j)
 
     dz = z_t(i,j) - z_b(i,j)
-    p_ave = -GxRho*(0.5*(z_t(i,j)+z_b(i,j)) - z0pres)
+    p_ave = -GxRho*(0.5*(z_t(i,j)+z_b(i,j)) - z0pres(i,j))
 
     I_al0 = 1.0 / al0
     I_Lzz = 1.0 / (p0 + (lambda * I_al0) + p_ave)
@@ -578,14 +585,15 @@ subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
     intz(1) = dpa(i,j) ; intz(5) = dpa(i+1,j)
     do m=2,4
       wt_L = 0.25*real(5-m) ; wt_R = 1.0-wt_L
-      wtT_L = wt_L*hWt_LL + wt_R*hWt_RL ; wtT_R = wt_L*hWt_LR + wt_R*hWt_RR
+      wtT_L = (wt_L*hWt_LL) + (wt_R*hWt_RL) ; wtT_R = (wt_L*hWt_LR) + (wt_R*hWt_RR)
 
-      al0 = wtT_L*al0_2d(i,j) + wtT_R*al0_2d(i+1,j)
-      p0 = wtT_L*p0_2d(i,j) + wtT_R*p0_2d(i+1,j)
-      lambda = wtT_L*lambda_2d(i,j) + wtT_R*lambda_2d(i+1,j)
+      al0 = (wtT_L*al0_2d(i,j)) + (wtT_R*al0_2d(i+1,j))
+      p0 = (wtT_L*p0_2d(i,j)) + (wtT_R*p0_2d(i+1,j))
+      lambda = (wtT_L*lambda_2d(i,j)) + (wtT_R*lambda_2d(i+1,j))
 
-      dz = wt_L*(z_t(i,j) - z_b(i,j)) + wt_R*(z_t(i+1,j) - z_b(i+1,j))
-      p_ave = -GxRho*(0.5*(wt_L*(z_t(i,j)+z_b(i,j)) + wt_R*(z_t(i+1,j)+z_b(i+1,j))) - z0pres)
+      dz = (wt_L*(z_t(i,j) - z_b(i,j))) + (wt_R*(z_t(i+1,j) - z_b(i+1,j)))
+      p_ave = -GxRho*((wt_L * (0.5*(z_t(i,j)+z_b(i,j)) - z0pres(i,j))) + &
+                      (wt_R * (0.5*(z_t(i+1,j)+z_b(i+1,j)) - z0pres(i+1,j))))
 
       I_al0 = 1.0 / al0
       I_Lzz = 1.0 / (p0 + (lambda * I_al0) + p_ave)
@@ -619,14 +627,15 @@ subroutine int_density_dz_wright(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
     intz(1) = dpa(i,j) ; intz(5) = dpa(i,j+1)
     do m=2,4
       wt_L = 0.25*real(5-m) ; wt_R = 1.0-wt_L
-      wtT_L = wt_L*hWt_LL + wt_R*hWt_RL ; wtT_R = wt_L*hWt_LR + wt_R*hWt_RR
+      wtT_L = (wt_L*hWt_LL) + (wt_R*hWt_RL) ; wtT_R = (wt_L*hWt_LR) + (wt_R*hWt_RR)
 
-      al0 = wtT_L*al0_2d(i,j) + wtT_R*al0_2d(i,j+1)
-      p0 = wtT_L*p0_2d(i,j) + wtT_R*p0_2d(i,j+1)
-      lambda = wtT_L*lambda_2d(i,j) + wtT_R*lambda_2d(i,j+1)
+      al0 = (wtT_L*al0_2d(i,j)) + (wtT_R*al0_2d(i,j+1))
+      p0 = (wtT_L*p0_2d(i,j)) + (wtT_R*p0_2d(i,j+1))
+      lambda = (wtT_L*lambda_2d(i,j)) + (wtT_R*lambda_2d(i,j+1))
 
-      dz = wt_L*(z_t(i,j) - z_b(i,j)) + wt_R*(z_t(i,j+1) - z_b(i,j+1))
-      p_ave = -GxRho*(0.5*(wt_L*(z_t(i,j)+z_b(i,j)) + wt_R*(z_t(i,j+1)+z_b(i,j+1))) - z0pres)
+      dz = (wt_L*(z_t(i,j) - z_b(i,j))) + (wt_R*(z_t(i,j+1) - z_b(i,j+1)))
+      p_ave = -GxRho*((wt_L*(0.5*(z_t(i,j)+z_b(i,j))-z0pres(i,j))) + &
+                      (wt_R*(0.5*(z_t(i,j+1)+z_b(i,j+1))-z0pres(i,j+1))))
 
       I_al0 = 1.0 / al0
       I_Lzz = 1.0 / (p0 + (lambda * I_al0) + p_ave)
@@ -823,16 +832,16 @@ subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
     intp(1) = dza(i,j) ; intp(5) = dza(i+1,j)
     do m=2,4
       wt_L = 0.25*real(5-m) ; wt_R = 1.0-wt_L
-      wtT_L = wt_L*hWt_LL + wt_R*hWt_RL ; wtT_R = wt_L*hWt_LR + wt_R*hWt_RR
+      wtT_L = (wt_L*hWt_LL) + (wt_R*hWt_RL) ; wtT_R = (wt_L*hWt_LR) + (wt_R*hWt_RR)
 
       ! T, S and p are interpolated in the horizontal.  The p interpolation
       ! is linear, but for T and S it may be thickness weighted.
-      al0 = wtT_L*al0_2d(i,j) + wtT_R*al0_2d(i+1,j)
-      p0 = wtT_L*p0_2d(i,j) + wtT_R*p0_2d(i+1,j)
-      lambda = wtT_L*lambda_2d(i,j) + wtT_R*lambda_2d(i+1,j)
+      al0 = (wtT_L*al0_2d(i,j)) + (wtT_R*al0_2d(i+1,j))
+      p0 = (wtT_L*p0_2d(i,j)) + (wtT_R*p0_2d(i+1,j))
+      lambda = (wtT_L*lambda_2d(i,j)) + (wtT_R*lambda_2d(i+1,j))
 
-      dp = wt_L*(p_b(i,j) - p_t(i,j)) + wt_R*(p_b(i+1,j) - p_t(i+1,j))
-      p_ave = 0.5*(wt_L*(p_t(i,j)+p_b(i,j)) + wt_R*(p_t(i+1,j)+p_b(i+1,j)))
+      dp = (wt_L*(p_b(i,j) - p_t(i,j))) + (wt_R*(p_b(i+1,j) - p_t(i+1,j)))
+      p_ave = 0.5*((wt_L*(p_t(i,j)+p_b(i,j))) + (wt_R*(p_t(i+1,j)+p_b(i+1,j))))
 
       eps = 0.5 * dp / (p0 + p_ave) ; eps2 = eps*eps
       intp(m) = (al0 + lambda / (p0 + p_ave) - spv_ref)*dp + 2.0*eps* &
@@ -867,16 +876,16 @@ subroutine int_spec_vol_dp_wright(T, S, p_t, p_b, spv_ref, HI, dza, &
     intp(1) = dza(i,j) ; intp(5) = dza(i,j+1)
     do m=2,4
       wt_L = 0.25*real(5-m) ; wt_R = 1.0-wt_L
-      wtT_L = wt_L*hWt_LL + wt_R*hWt_RL ; wtT_R = wt_L*hWt_LR + wt_R*hWt_RR
+      wtT_L = (wt_L*hWt_LL) + (wt_R*hWt_RL) ; wtT_R = (wt_L*hWt_LR) + (wt_R*hWt_RR)
 
       ! T, S and p are interpolated in the horizontal.  The p interpolation
       ! is linear, but for T and S it may be thickness weighted.
-      al0 = wt_L*al0_2d(i,j) + wt_R*al0_2d(i,j+1)
-      p0 = wt_L*p0_2d(i,j) + wt_R*p0_2d(i,j+1)
-      lambda = wt_L*lambda_2d(i,j) + wt_R*lambda_2d(i,j+1)
+      al0 = (wt_L*al0_2d(i,j)) + (wt_R*al0_2d(i,j+1))
+      p0 = (wt_L*p0_2d(i,j)) + (wt_R*p0_2d(i,j+1))
+      lambda = (wt_L*lambda_2d(i,j)) + (wt_R*lambda_2d(i,j+1))
 
-      dp = wt_L*(p_b(i,j) - p_t(i,j)) + wt_R*(p_b(i,j+1) - p_t(i,j+1))
-      p_ave = 0.5*(wt_L*(p_t(i,j)+p_b(i,j)) + wt_R*(p_t(i,j+1)+p_b(i,j+1)))
+      dp = (wt_L*(p_b(i,j) - p_t(i,j))) + (wt_R*(p_b(i,j+1) - p_t(i,j+1)))
+      p_ave = 0.5*((wt_L*(p_t(i,j)+p_b(i,j))) + (wt_R*(p_t(i,j+1)+p_b(i,j+1))))
 
       eps = 0.5 * dp / (p0 + p_ave) ; eps2 = eps*eps
       intp(m) = (al0 + lambda / (p0 + p_ave) - spv_ref)*dp + 2.0*eps* &

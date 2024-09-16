@@ -80,7 +80,8 @@ subroutine int_density_dz(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, EOS, US, dpa,
   real,       optional, intent(in)  :: dz_neglect !< A minuscule thickness change [Z ~> m]
   integer,    optional, intent(in)  :: MassWghtInterp !< A flag indicating whether and how to use
                                            !! mass weighting to interpolate T/S in integrals
-  real,       optional, intent(in)  :: Z_0p !< The height at which the pressure is 0 [Z ~> m]
+  real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed), &
+              optional, intent(in)  :: Z_0p !< The height at which the pressure is 0 [Z ~> m]
 
   if (EOS_quadrature(EOS)) then
     call int_density_dz_generic_pcm(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, EOS, US, dpa, &
@@ -139,7 +140,8 @@ subroutine int_density_dz_generic_pcm(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
                                            !! mass weighting to interpolate T/S in integrals
   logical,    optional, intent(in)  :: use_inaccurate_form !< If true, uses an inaccurate form of
                                           !! density anomalies, as was used prior to March 2018.
-  real,       optional, intent(in)  :: Z_0p !< The height at which the pressure is 0 [Z ~> m]
+  real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed), &
+              optional, intent(in)  :: Z_0p  !< The height at which the pressure is 0 [Z ~> m]
 
   ! Local variables
   real :: T5((5*HI%iscB+1):(5*(HI%iecB+2)))  ! Temperatures along a line of subgrid locations [C ~> degC]
@@ -157,7 +159,7 @@ subroutine int_density_dz_generic_pcm(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
   real :: dz         ! The layer thickness [Z ~> m]
   real :: dz_x(5,HI%iscB:HI%iecB) ! Layer thicknesses along an x-line of subgrid locations [Z ~> m]
   real :: dz_y(5,HI%isc:HI%iec)   ! Layer thicknesses along a y-line of subgrid locations [Z ~> m]
-  real :: z0pres     ! The height at which the pressure is zero [Z ~> m]
+  real :: z0pres(HI%isd:HI%ied,HI%jsd:HI%jed) ! The height at which the pressure is zero [Z ~> m]
   real :: hWght      ! A pressure-thickness below topography [Z ~> m]
   real :: hL, hR     ! Pressure-thicknesses of the columns to the left and right [Z ~> m]
   real :: iDenom     ! The inverse of the denominator in the weights [Z-2 ~> m-2]
@@ -184,7 +186,13 @@ subroutine int_density_dz_generic_pcm(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
 
   GxRho = G_e * rho_0
   I_Rho = 1.0 / rho_0
-  z0pres = 0.0 ; if (present(Z_0p)) z0pres = Z_0p
+  if (present(Z_0p)) then
+    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+      z0pres(i,j) = Z_0p(i,j)
+    enddo ; enddo
+  else
+    z0pres(:,:) = 0.0
+  endif
   use_rho_ref = .true.
   if (present(use_inaccurate_form)) then
     if (use_inaccurate_form) use_rho_ref = .not. use_inaccurate_form
@@ -209,7 +217,7 @@ subroutine int_density_dz_generic_pcm(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
       dz = z_t(i,j) - z_b(i,j)
       do n=1,5
         T5(i*5+n) = T(i,j) ; S5(i*5+n) = S(i,j)
-        p5(i*5+n) = -GxRho*((z_t(i,j) - z0pres) - 0.25*real(n-1)*dz)
+        p5(i*5+n) = -GxRho*((z_t(i,j) - z0pres(i,j)) - 0.25*real(n-1)*dz)
       enddo
     enddo
 
@@ -255,12 +263,12 @@ subroutine int_density_dz_generic_pcm(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
         ! T, S, and z are interpolated in the horizontal.  The z interpolation
         ! is linear, but for T and S it may be thickness weighted.
         wt_L = 0.25*real(5-m) ; wt_R = 1.0-wt_L
-        wtT_L = wt_L*hWt_LL + wt_R*hWt_RL ; wtT_R = wt_L*hWt_LR + wt_R*hWt_RR
-        dz_x(m,i) = wt_L*(z_t(i,j) - z_b(i,j)) + wt_R*(z_t(i+1,j) - z_b(i+1,j))
+        wtT_L = (wt_L*hWt_LL) + (wt_R*hWt_RL) ; wtT_R = (wt_L*hWt_LR) + (wt_R*hWt_RR)
+        dz_x(m,i) = (wt_L*(z_t(i,j) - z_b(i,j))) + (wt_R*(z_t(i+1,j) - z_b(i+1,j)))
         pos = i*15+(m-2)*5
-        T15(pos+1) = wtT_L*T(i,j) + wtT_R*T(i+1,j)
-        S15(pos+1) = wtT_L*S(i,j) + wtT_R*S(i+1,j)
-        p15(pos+1) = -GxRho*((wt_L*z_t(i,j) + wt_R*z_t(i+1,j)) - z0pres)
+        T15(pos+1) = (wtT_L*T(i,j)) + (wtT_R*T(i+1,j))
+        S15(pos+1) = (wtT_L*S(i,j)) + (wtT_R*S(i+1,j))
+        p15(pos+1) = -GxRho * ((wt_L*(z_t(i,j)-z0pres(i,j))) + (wt_R*(z_t(i+1,j)-z0pres(i+1,j))))
         do n=2,5
           T15(pos+n) = T15(pos+1) ; S15(pos+n) = S15(pos+1)
           p15(pos+n) = p15(pos+n-1) + GxRho*0.25*dz_x(m,i)
@@ -280,16 +288,16 @@ subroutine int_density_dz_generic_pcm(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
       if (use_rho_ref) then
         do m=2,4
           pos = i*15+(m-2)*5
-          intz(m) = G_e*dz_x(m,i)*( C1_90*( 7.0*(r15(pos+1)+r15(pos+5)) + &
+          intz(m) = (G_e*dz_x(m,i)*(C1_90*( 7.0*(r15(pos+1)+r15(pos+5)) + &
                                            32.0*(r15(pos+2)+r15(pos+4)) + &
-                                           12.0*r15(pos+3)))
+                                           12.0*r15(pos+3)) ))
         enddo
       else
         do m=2,4
           pos = i*15+(m-2)*5
-          intz(m) = G_e*dz_x(m,i)*( C1_90*( 7.0*(r15(pos+1)+r15(pos+5)) + &
+          intz(m) = (G_e*dz_x(m,i)*(C1_90*( 7.0*(r15(pos+1)+r15(pos+5)) + &
                                            32.0*(r15(pos+2)+r15(pos+4)) + &
-                                           12.0*r15(pos+3)) - rho_ref )
+                                           12.0*r15(pos+3)) - rho_ref ))
         enddo
       endif
       ! Use Boole's rule to integrate the bottom pressure anomaly values in x.
@@ -321,12 +329,12 @@ subroutine int_density_dz_generic_pcm(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
         ! T, S, and z are interpolated in the horizontal.  The z interpolation
         ! is linear, but for T and S it may be thickness weighted.
         wt_L = 0.25*real(5-m) ; wt_R = 1.0-wt_L
-        wtT_L = wt_L*hWt_LL + wt_R*hWt_RL ; wtT_R = wt_L*hWt_LR + wt_R*hWt_RR
-        dz_y(m,i) = wt_L*(z_t(i,j) - z_b(i,j)) + wt_R*(z_t(i,j+1) - z_b(i,j+1))
+        wtT_L = (wt_L*hWt_LL) + (wt_R*hWt_RL) ; wtT_R = (wt_L*hWt_LR) + (wt_R*hWt_RR)
+        dz_y(m,i) = (wt_L*(z_t(i,j) - z_b(i,j))) + (wt_R*(z_t(i,j+1) - z_b(i,j+1)))
         pos = i*15+(m-2)*5
-        T15(pos+1) = wtT_L*T(i,j) + wtT_R*T(i,j+1)
-        S15(pos+1) = wtT_L*S(i,j) + wtT_R*S(i,j+1)
-        p15(pos+1) = -GxRho*((wt_L*z_t(i,j) + wt_R*z_t(i,j+1)) - z0pres)
+        T15(pos+1) = (wtT_L*T(i,j)) + (wtT_R*T(i,j+1))
+        S15(pos+1) = (wtT_L*S(i,j)) + (wtT_R*S(i,j+1))
+        p15(pos+1) = -GxRho * ((wt_L*(z_t(i,j)-z0pres(i,j))) + (wt_R*(z_t(i,j+1)-z0pres(i,j+1))))
         do n=2,5
           T15(pos+n) = T15(pos+1) ; S15(pos+n) = S15(pos+1)
           p15(pos+n) = p15(pos+n-1) + GxRho*0.25*dz_y(m,i)
@@ -348,13 +356,13 @@ subroutine int_density_dz_generic_pcm(T, S, z_t, z_b, rho_ref, rho_0, G_e, HI, &
       do m=2,4
         pos = i*15+(m-2)*5
         if (use_rho_ref) then
-          intz(m) = G_e*dz_y(m,i)*( C1_90*(7.0*(r15(pos+1)+r15(pos+5)) + &
+          intz(m) = (G_e*dz_y(m,i)*(C1_90*(7.0*(r15(pos+1)+r15(pos+5)) + &
                                           32.0*(r15(pos+2)+r15(pos+4)) + &
-                                          12.0*r15(pos+3)))
+                                          12.0*r15(pos+3)) ))
         else
-          intz(m) = G_e*dz_y(m,i)*( C1_90*(7.0*(r15(pos+1)+r15(pos+5)) + &
+          intz(m) = (G_e*dz_y(m,i)*(C1_90*(7.0*(r15(pos+1)+r15(pos+5)) + &
                                           32.0*(r15(pos+2)+r15(pos+4)) + &
-                                          12.0*r15(pos+3)) - rho_ref )
+                                          12.0*r15(pos+3)) - rho_ref ))
         endif
       enddo
       ! Use Boole's rule to integrate the values.
@@ -414,7 +422,8 @@ subroutine int_density_dz_generic_plm(k, tv, T_t, T_b, S_t, S_b, e, rho_ref, &
                                            !! mass weighting to interpolate T/S in integrals
   logical,    optional, intent(in)  :: use_inaccurate_form !< If true, uses an inaccurate form of
                                            !! density anomalies, as was used prior to March 2018.
-  real,       optional, intent(in)  :: Z_0p !< The height at which the pressure is 0 [Z ~> m]
+  real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed), &
+              optional, intent(in)  :: Z_0p !< The height at which the pressure is 0 [Z ~> m]
 
 ! This subroutine calculates (by numerical quadrature) integrals of
 ! pressure anomalies across layers, which are required for calculating the
@@ -464,7 +473,7 @@ subroutine int_density_dz_generic_plm(k, tv, T_t, T_b, S_t, S_b, e, rho_ref, &
   real :: massWeightToggle          ! A non-dimensional toggle factor (0 or 1) [nondim]
   real :: Ttl, Tbl, Ttr, Tbr        ! Temperatures at the velocity cell corners [C ~> degC]
   real :: Stl, Sbl, Str, Sbr        ! Salinities at the velocity cell corners [S ~> ppt]
-  real :: z0pres                    ! The height at which the pressure is zero [Z ~> m]
+  real :: z0pres(HI%isd:HI%ied,HI%jsd:HI%jed) ! The height at which the pressure is zero [Z ~> m]
   real :: hWght                     ! A topographically limited thickness weight [Z ~> m]
   real :: hL, hR                    ! Thicknesses to the left and right [Z ~> m]
   real :: iDenom                    ! The denominator of the thickness weight expressions [Z-2 ~> m-2]
@@ -480,7 +489,13 @@ subroutine int_density_dz_generic_plm(k, tv, T_t, T_b, S_t, S_b, e, rho_ref, &
 
   GxRho = G_e * rho_0
   I_Rho = 1.0 / rho_0
-  z0pres = 0.0 ; if (present(Z_0p)) z0pres = Z_0p
+  if (present(Z_0p)) then
+    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+      z0pres(i,j) = Z_0p(i,j)
+    enddo ; enddo
+  else
+    z0pres(:,:) = 0.0
+  endif
   massWeightToggle = 0.
   if (present(MassWghtInterp)) then ; if (BTEST(MassWghtInterp, 0)) massWeightToggle = 1. ; endif
   use_rho_ref = .true.
@@ -517,7 +532,7 @@ subroutine int_density_dz_generic_plm(k, tv, T_t, T_b, S_t, S_b, e, rho_ref, &
     do i = Isq,Ieq+1
       dz(i) = e(i,j,K) - e(i,j,K+1)
       do n=1,5
-        p5(i*5+n) = -GxRho*((e(i,j,K) - z0pres) - 0.25*real(n-1)*dz(i))
+        p5(i*5+n) = -GxRho*((e(i,j,K) - z0pres(i,j)) - 0.25*real(n-1)*dz(i))
         ! Salinity and temperature points are linearly interpolated
         S5(i*5+n) = wt_t(n) * S_t(i,j,k) + wt_b(n) * S_b(i,j,k)
         T5(i*5+n) = wt_t(n) * T_t(i,j,k) + wt_b(n) * T_b(i,j,k)
@@ -597,20 +612,20 @@ subroutine int_density_dz_generic_plm(k, tv, T_t, T_b, S_t, S_b, e, rho_ref, &
 
       do m=2,4
         w_left = wt_t(m) ; w_right = wt_b(m)
-        dz_x(m,i) = w_left*(e(i,j,K) - e(i,j,K+1)) + w_right*(e(i+1,j,K) - e(i+1,j,K+1))
+        dz_x(m,i) = (w_left*(e(i,j,K) - e(i,j,K+1))) + (w_right*(e(i+1,j,K) - e(i+1,j,K+1)))
 
         ! Salinity and temperature points are linearly interpolated in
         ! the horizontal. The subscript (1) refers to the top value in
         ! the vertical profile while subscript (5) refers to the bottom
         ! value in the vertical profile.
         pos = i*15+(m-2)*5
-        T15(pos+1) = w_left*Ttl + w_right*Ttr
-        T15(pos+5) = w_left*Tbl + w_right*Tbr
+        T15(pos+1) = (w_left*Ttl) + (w_right*Ttr)
+        T15(pos+5) = (w_left*Tbl) + (w_right*Tbr)
 
-        S15(pos+1) = w_left*Stl + w_right*Str
-        S15(pos+5) = w_left*Sbl + w_right*Sbr
+        S15(pos+1) = (w_left*Stl) + (w_right*Str)
+        S15(pos+5) = (w_left*Sbl) + (w_right*Sbr)
 
-        p15(pos+1) = -GxRho*((w_left*e(i,j,K) + w_right*e(i+1,j,K)) - z0pres)
+        p15(pos+1) = -GxRho * ((w_left*(e(i,j,K)-z0pres(i,j))) + (w_right*(e(i+1,j,K)-z0pres(i+1,j))))
 
         ! Pressure
         do n=2,5
@@ -622,9 +637,9 @@ subroutine int_density_dz_generic_plm(k, tv, T_t, T_b, S_t, S_b, e, rho_ref, &
           S15(pos+n) = wt_t(n) * S15(pos+1) + wt_b(n) * S15(pos+5)
           T15(pos+n) = wt_t(n) * T15(pos+1) + wt_b(n) * T15(pos+5)
         enddo
-        if (use_varT) T215(pos+1:pos+5) = w_left*tv%varT(i,j,k) + w_right*tv%varT(i+1,j,k)
-        if (use_covarTS) TS15(pos+1:pos+5) = w_left*tv%covarTS(i,j,k) + w_right*tv%covarTS(i+1,j,k)
-        if (use_varS) S215(pos+1:pos+5) = w_left*tv%varS(i,j,k) + w_right*tv%varS(i+1,j,k)
+        if (use_varT) T215(pos+1:pos+5) = (w_left*tv%varT(i,j,k)) + (w_right*tv%varT(i+1,j,k))
+        if (use_covarTS) TS15(pos+1:pos+5) = (w_left*tv%covarTS(i,j,k)) + (w_right*tv%covarTS(i+1,j,k))
+        if (use_varS) S215(pos+1:pos+5) = (w_left*tv%varS(i,j,k)) + (w_right*tv%varS(i+1,j,k))
       enddo
     enddo
 
@@ -645,14 +660,14 @@ subroutine int_density_dz_generic_plm(k, tv, T_t, T_b, S_t, S_b, e, rho_ref, &
       if (use_rho_ref) then
         do m = 2,4
           pos = i*15+(m-2)*5
-          intz(m) = G_e*dz_x(m,i)*( C1_90*(7.0*(r15(pos+1)+r15(pos+5)) + 32.0*(r15(pos+2)+r15(pos+4)) + &
-                            12.0*r15(pos+3)) )
+          intz(m) = (G_e*dz_x(m,i)*( C1_90*(7.0*(r15(pos+1)+r15(pos+5)) + 32.0*(r15(pos+2)+r15(pos+4)) + &
+                            12.0*r15(pos+3)) ))
         enddo
       else
         do m = 2,4
           pos = i*15+(m-2)*5
-          intz(m) = G_e*dz_x(m,i)*( C1_90*(7.0*(r15(pos+1)+r15(pos+5)) + 32.0*(r15(pos+2)+r15(pos+4)) + &
-                            12.0*r15(pos+3)) - rho_ref )
+          intz(m) = (G_e*dz_x(m,i)*( C1_90*(7.0*(r15(pos+1)+r15(pos+5)) + 32.0*(r15(pos+2)+r15(pos+4)) + &
+                            12.0*r15(pos+3)) - rho_ref ))
         enddo
       endif
       ! Use Boole's rule to integrate the bottom pressure anomaly values in x.
@@ -693,20 +708,20 @@ subroutine int_density_dz_generic_plm(k, tv, T_t, T_b, S_t, S_b, e, rho_ref, &
 
       do m=2,4
         w_left = wt_t(m) ; w_right = wt_b(m)
-        dz_y(m,i) = w_left*(e(i,j,K) - e(i,j,K+1)) + w_right*(e(i,j+1,K) - e(i,j+1,K+1))
+        dz_y(m,i) = (w_left*(e(i,j,K) - e(i,j,K+1))) + (w_right*(e(i,j+1,K) - e(i,j+1,K+1)))
 
         ! Salinity and temperature points are linearly interpolated in
         ! the horizontal. The subscript (1) refers to the top value in
         ! the vertical profile while subscript (5) refers to the bottom
         ! value in the vertical profile.
         pos = i*15+(m-2)*5
-        T15(pos+1) = w_left*Ttl + w_right*Ttr
-        T15(pos+5) = w_left*Tbl + w_right*Tbr
+        T15(pos+1) = (w_left*Ttl) + (w_right*Ttr)
+        T15(pos+5) = (w_left*Tbl) + (w_right*Tbr)
 
-        S15(pos+1) = w_left*Stl + w_right*Str
-        S15(pos+5) = w_left*Sbl + w_right*Sbr
+        S15(pos+1) = (w_left*Stl) + (w_right*Str)
+        S15(pos+5) = (w_left*Sbl) + (w_right*Sbr)
 
-        p15(pos+1) = -GxRho*((w_left*e(i,j,K) + w_right*e(i,j+1,K)) - z0pres)
+        p15(pos+1) = -GxRho * ((w_left*(e(i,j,K)-z0pres(i,j))) + (w_right*(e(i,j+1,K)-z0pres(i,j+1))))
 
         ! Pressure
         do n=2,5
@@ -718,9 +733,9 @@ subroutine int_density_dz_generic_plm(k, tv, T_t, T_b, S_t, S_b, e, rho_ref, &
           S15(pos+n) = wt_t(n) * S15(pos+1) + wt_b(n) * S15(pos+5)
           T15(pos+n) = wt_t(n) * T15(pos+1) + wt_b(n) * T15(pos+5)
         enddo
-        if (use_varT) T215(pos+1:pos+5) = w_left*tv%varT(i,j,k) + w_right*tv%varT(i,j+1,k)
-        if (use_covarTS) TS15(pos+1:pos+5) = w_left*tv%covarTS(i,j,k) + w_right*tv%covarTS(i,j+1,k)
-        if (use_varS) S215(pos+1:pos+5) = w_left*tv%varS(i,j,k) + w_right*tv%varS(i,j+1,k)
+        if (use_varT) T215(pos+1:pos+5) = (w_left*tv%varT(i,j,k)) + (w_right*tv%varT(i,j+1,k))
+        if (use_covarTS) TS15(pos+1:pos+5) = (w_left*tv%covarTS(i,j,k)) + (w_right*tv%covarTS(i,j+1,k))
+        if (use_varS) S215(pos+1:pos+5) = (w_left*tv%varS(i,j,k)) + (w_right*tv%varS(i,j+1,k))
       enddo
     enddo
 
@@ -745,16 +760,16 @@ subroutine int_density_dz_generic_plm(k, tv, T_t, T_b, S_t, S_b, e, rho_ref, &
       if (use_rho_ref) then
         do m = 2,4
           pos = i*15+(m-2)*5
-          intz(m) = G_e*dz_y(m,i)*( C1_90*(7.0*(r15(pos+1)+r15(pos+5)) + &
+          intz(m) = (G_e*dz_y(m,i)*( C1_90*(7.0*(r15(pos+1)+r15(pos+5)) + &
                                            32.0*(r15(pos+2)+r15(pos+4)) + &
-                                           12.0*r15(pos+3)) )
+                                           12.0*r15(pos+3)) ))
         enddo
       else
         do m = 2,4
           pos = i*15+(m-2)*5
-          intz(m) = G_e*dz_y(m,i)*( C1_90*(7.0*(r15(pos+1)+r15(pos+5)) + &
+          intz(m) = (G_e*dz_y(m,i)*( C1_90*(7.0*(r15(pos+1)+r15(pos+5)) + &
                                            32.0*(r15(pos+2)+r15(pos+4)) + &
-                                           12.0*r15(pos+3)) - rho_ref )
+                                           12.0*r15(pos+3)) - rho_ref ))
         enddo
       endif
       ! Use Boole's rule to integrate the values.
@@ -812,7 +827,8 @@ subroutine int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
                                            !! divided by the y grid spacing [R L2 T-2 ~> Pa]
   integer,    optional, intent(in)  :: MassWghtInterp !< A flag indicating whether and how to use
                                            !! mass weighting to interpolate T/S in integrals
-  real,       optional, intent(in)  :: Z_0p !< The height at which the pressure is 0 [Z ~> m]
+  real, dimension(HI%isd:HI%ied,HI%jsd:HI%jed), &
+              optional, intent(in)  :: Z_0p !< The height at which the pressure is 0 [Z ~> m]
 
 ! This subroutine calculates (by numerical quadrature) integrals of
 ! pressure anomalies across layers, which are required for calculating the
@@ -864,7 +880,7 @@ subroutine int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
   real :: t6 ! PPM curvature coefficient for T [C ~> degC]
   real :: T_top, T_mn, T_bot ! Left edge, cell mean and right edge values used in PPM reconstructions of T [C ~> degC]
   real :: S_top, S_mn, S_bot ! Left edge, cell mean and right edge values used in PPM reconstructions of S [S ~> ppt]
-  real :: z0pres ! The height at which the pressure is zero [Z ~> m]
+  real :: z0pres(HI%isd:HI%ied,HI%jsd:HI%jed) ! The height at which the pressure is zero [Z ~> m]
   real :: hWght  ! A topographically limited thickness weight [Z ~> m]
   real :: hL, hR ! Thicknesses to the left and right [Z ~> m]
   real :: iDenom ! The denominator of the thickness weight expressions [Z-2 ~> m-2]
@@ -879,7 +895,13 @@ subroutine int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
 
   GxRho = G_e * rho_0
   I_Rho = 1.0 / rho_0
-  z0pres = 0.0 ; if (present(Z_0p)) z0pres = Z_0p
+  if (present(Z_0p)) then
+    do j=Jsq,Jeq+1 ; do i=Isq,Ieq+1
+      z0pres(i,j) = Z_0p(i,j)
+    enddo ; enddo
+  else
+    z0pres(:,:) = 0.0
+  endif
   massWeightToggle = 0.
   if (present(MassWghtInterp)) then ; if (BTEST(MassWghtInterp, 0)) massWeightToggle = 1. ; endif
 
@@ -924,7 +946,7 @@ subroutine int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
       endif
       dz = e(i,j,K) - e(i,j,K+1)
       do n=1,5
-        p5(I*5+n) = -GxRho*((e(i,j,K) - z0pres) - 0.25*real(n-1)*dz)
+        p5(I*5+n) = -GxRho*((e(i,j,K) - z0pres(i,j)) - 0.25*real(n-1)*dz)
         ! Salinity and temperature points are reconstructed with PPM
         S5(I*5+n) = wt_t(n) * S_t(i,j,k) + wt_b(n) * ( S_b(i,j,k) + s6 * wt_t(n) )
         T5(I*5+n) = wt_t(n) * T_t(i,j,k) + wt_b(n) * ( T_b(i,j,k) + t6 * wt_t(n) )
@@ -999,19 +1021,19 @@ subroutine int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
         ! the horizontal. The subscript (1) refers to the top value in
         ! the vertical profile while subscript (5) refers to the bottom
         ! value in the vertical profile.
-        T_top = w_left*Ttl + w_right*Ttr
-        T_mn = w_left*Tml + w_right*Tmr
-        T_bot = w_left*Tbl + w_right*Tbr
+        T_top = (w_left*Ttl) + (w_right*Ttr)
+        T_mn = (w_left*Tml) + (w_right*Tmr)
+        T_bot = (w_left*Tbl) + (w_right*Tbr)
 
-        S_top = w_left*Stl + w_right*Str
-        S_mn = w_left*Sml + w_right*Smr
-        S_bot = w_left*Sbl + w_right*Sbr
+        S_top = (w_left*Stl) + (w_right*Str)
+        S_mn = (w_left*Sml) + (w_right*Smr)
+        S_bot = (w_left*Sbl) + (w_right*Sbr)
 
         ! Pressure
-        dz_x(m,i) = w_left*(e(i,j,K) - e(i,j,K+1)) + w_right*(e(i+1,j,K) - e(i+1,j,K+1))
+        dz_x(m,i) = (w_left*(e(i,j,K) - e(i,j,K+1))) + (w_right*(e(i+1,j,K) - e(i+1,j,K+1)))
 
         pos = i*15+(m-2)*5
-        p15(pos+1) = -GxRho*((w_left*e(i,j,K) + w_right*e(i+1,j,K)) - z0pres)
+        p15(pos+1) = -GxRho * ((w_left*(e(i,j,K)-z0pres(i,j))) + (w_right*(e(i+1,j,K)-z0pres(i+1,j))))
         do n=2,5
           p15(pos+n) = p15(pos+n-1) + GxRho*0.25*dz_x(m,i)
         enddo
@@ -1027,9 +1049,9 @@ subroutine int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
           T15(pos+n) = wt_t(n) * T_top + wt_b(n) * ( T_bot + t6 * wt_t(n) )
         enddo
         if (use_stanley_eos) then
-          if (use_varT) T215(pos+1:pos+5) = w_left*tv%varT(i,j,k) + w_right*tv%varT(i+1,j,k)
-          if (use_covarTS) TS15(pos+1:pos+5) = w_left*tv%covarTS(i,j,k) + w_right*tv%covarTS(i+1,j,k)
-          if (use_varS) S215(pos+1:pos+5) = w_left*tv%varS(i,j,k) + w_right*tv%varS(i+1,j,k)
+          if (use_varT) T215(pos+1:pos+5) = (w_left*tv%varT(i,j,k)) + (w_right*tv%varT(i+1,j,k))
+          if (use_covarTS) TS15(pos+1:pos+5) = (w_left*tv%covarTS(i,j,k)) + (w_right*tv%covarTS(i+1,j,k))
+          if (use_varS) S215(pos+1:pos+5) = (w_left*tv%varS(i,j,k)) + (w_right*tv%varS(i+1,j,k))
         endif
         if (use_stanley_eos) then
           call calculate_density(T5, S5, p5, T25, TS5, S25, r5, EOS, rho_ref=rho_ref)
@@ -1049,9 +1071,9 @@ subroutine int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
       do m=2,4
         pos = i*15+(m-2)*5
         ! Use Boole's rule to estimate the pressure anomaly change.
-        intz(m) = G_e*dz_x(m,i)*( C1_90*( 7.0*(r15(pos+1)+r15(pos+5)) + &
+        intz(m) = (G_e*dz_x(m,i)*(C1_90*( 7.0*(r15(pos+1)+r15(pos+5)) + &
                                          32.0*(r15(pos+2)+r15(pos+4)) + &
-                                         12.0*r15(pos+3)) )
+                                         12.0*r15(pos+3)) ))
       enddo ! m
       intz(1) = dpa(i,j) ; intz(5) = dpa(i+1,j)
 
@@ -1104,19 +1126,19 @@ subroutine int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
         ! the horizontal. The subscript (1) refers to the top value in
         ! the vertical profile while subscript (5) refers to the bottom
         ! value in the vertical profile.
-        T_top = w_left*Ttl + w_right*Ttr
-        T_mn = w_left*Tml + w_right*Tmr
-        T_bot = w_left*Tbl + w_right*Tbr
+        T_top = (w_left*Ttl) + (w_right*Ttr)
+        T_mn = (w_left*Tml) + (w_right*Tmr)
+        T_bot = (w_left*Tbl) + (w_right*Tbr)
 
-        S_top = w_left*Stl + w_right*Str
-        S_mn = w_left*Sml + w_right*Smr
-        S_bot = w_left*Sbl + w_right*Sbr
+        S_top = (w_left*Stl) + (w_right*Str)
+        S_mn = (w_left*Sml) + (w_right*Smr)
+        S_bot = (w_left*Sbl) + (w_right*Sbr)
 
         ! Pressure
-        dz_y(m,i) = w_left*(e(i,j,K) - e(i,j,K+1)) + w_right*(e(i,j+1,K) - e(i,j+1,K+1))
+        dz_y(m,i) = (w_left*(e(i,j,K) - e(i,j,K+1))) + (w_right*(e(i,j+1,K) - e(i,j+1,K+1)))
 
         pos = i*15+(m-2)*5
-        p15(pos+1) = -GxRho*((w_left*e(i,j,K) + w_right*e(i,j+1,K)) - z0pres)
+        p15(pos+1) = -GxRho * ((w_left*(e(i,j,K)-z0pres(i,j))) + (w_right*(e(i,j+1,K)-z0pres(i,j+1))))
         do n=2,5
           p15(pos+n) = p15(pos+n-1) + GxRho*0.25*dz_y(m,i)
         enddo
@@ -1133,9 +1155,9 @@ subroutine int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
         enddo
 
         if (use_stanley_eos) then
-          if (use_varT) T215(pos+1:pos+5) = w_left*tv%varT(i,j,k) + w_right*tv%varT(i,j+1,k)
-          if (use_covarTS) TS15(pos+1:pos+5) = w_left*tv%covarTS(i,j,k) + w_right*tv%covarTS(i,j+1,k)
-          if (use_varS) S215(pos+1:pos+5) = w_left*tv%varS(i,j,k) + w_right*tv%varS(i,j+1,k)
+          if (use_varT) T215(pos+1:pos+5) = (w_left*tv%varT(i,j,k)) + (w_right*tv%varT(i,j+1,k))
+          if (use_covarTS) TS15(pos+1:pos+5) = (w_left*tv%covarTS(i,j,k)) + (w_right*tv%covarTS(i,j+1,k))
+          if (use_varS) S215(pos+1:pos+5) = (w_left*tv%varS(i,j,k)) + (w_right*tv%varS(i,j+1,k))
         endif
       enddo
     enddo
@@ -1153,9 +1175,9 @@ subroutine int_density_dz_generic_ppm(k, tv, T_t, T_b, S_t, S_b, e, &
       do m=2,4
         ! Use Boole's rule to estimate the pressure anomaly change.
         pos = i*15+(m-2)*5
-        intz(m) = G_e*dz_y(m,i)*( C1_90*( 7.0*(r15(pos+1)+r15(pos+5)) + &
+        intz(m) = (G_e*dz_y(m,i)*(C1_90*( 7.0*(r15(pos+1)+r15(pos+5)) + &
                                          32.0*(r15(pos+2)+r15(pos+4)) + &
-                                         12.0*r15(pos+3)) )
+                                         12.0*r15(pos+3)) ))
       enddo ! m
       intz(1) = dpa(i,j) ; intz(5) = dpa(i,j+1)
 
@@ -1381,15 +1403,15 @@ subroutine int_spec_vol_dp_generic_pcm(T, S, p_t, p_b, alpha_ref, HI, EOS, US, d
 
       do m=2,4
         wt_L = 0.25*real(5-m) ; wt_R = 1.0-wt_L
-        wtT_L = wt_L*hWt_LL + wt_R*hWt_RL ; wtT_R = wt_L*hWt_LR + wt_R*hWt_RR
+        wtT_L = (wt_L*hWt_LL) + (wt_R*hWt_RL) ; wtT_R = (wt_L*hWt_LR) + (wt_R*hWt_RR)
         pos = i*15+(m-2)*5
 
         ! T, S, and p are interpolated in the horizontal.  The p interpolation
         ! is linear, but for T and S it may be thickness weighted.
-        p15(pos+1) = wt_L*p_b(i,j) + wt_R*p_b(i+1,j)
-        dp_x(m,I) = wt_L*(p_b(i,j) - p_t(i,j)) + wt_R*(p_b(i+1,j) - p_t(i+1,j))
-        T15(pos+1) = wtT_L*T(i,j) + wtT_R*T(i+1,j)
-        S15(pos+1) = wtT_L*S(i,j) + wtT_R*S(i+1,j)
+        p15(pos+1) = (wt_L*p_b(i,j)) + (wt_R*p_b(i+1,j))
+        dp_x(m,I) = (wt_L*(p_b(i,j) - p_t(i,j))) + (wt_R*(p_b(i+1,j) - p_t(i+1,j)))
+        T15(pos+1) = (wtT_L*T(i,j)) + (wtT_R*T(i+1,j))
+        S15(pos+1) = (wtT_L*S(i,j)) + (wtT_R*S(i+1,j))
 
         do n=2,5
           T15(pos+n) = T15(pos+1) ; S15(pos+n) = S15(pos+1)
@@ -1406,8 +1428,8 @@ subroutine int_spec_vol_dp_generic_pcm(T, S, p_t, p_b, alpha_ref, HI, EOS, US, d
       ! Use Boole's rule to estimate the interface height anomaly change.
       do m=2,4
         pos = i*15+(m-2)*5
-        intp(m) = dp_x(m,I)*( C1_90*(7.0*(a15(pos+1)+a15(pos+5)) + 32.0*(a15(pos+2)+a15(pos+4)) + &
-                                  12.0*a15(pos+3)))
+        intp(m) = (dp_x(m,I)*( C1_90*(7.0*(a15(pos+1)+a15(pos+5)) + 32.0*(a15(pos+2)+a15(pos+4)) + &
+                                  12.0*a15(pos+3)) ))
       enddo
       ! Use Boole's rule to integrate the interface height anomaly values in x.
       intx_dza(i,j) = C1_90*(7.0*(intp(1)+intp(5)) + 32.0*(intp(2)+intp(4)) + &
@@ -1439,15 +1461,15 @@ subroutine int_spec_vol_dp_generic_pcm(T, S, p_t, p_b, alpha_ref, HI, EOS, US, d
 
       do m=2,4
         wt_L = 0.25*real(5-m) ; wt_R = 1.0-wt_L
-        wtT_L = wt_L*hWt_LL + wt_R*hWt_RL ; wtT_R = wt_L*hWt_LR + wt_R*hWt_RR
+        wtT_L = (wt_L*hWt_LL) + (wt_R*hWt_RL) ; wtT_R = (wt_L*hWt_LR) + (wt_R*hWt_RR)
         pos = i*15+(m-2)*5
 
         ! T, S, and p are interpolated in the horizontal.  The p interpolation
         ! is linear, but for T and S it may be thickness weighted.
-        p15(pos+1) = wt_L*p_b(i,j) + wt_R*p_b(i,j+1)
-        dp_y(m,i) = wt_L*(p_b(i,j) - p_t(i,j)) + wt_R*(p_b(i,j+1) - p_t(i,j+1))
-        T15(pos+1) = wtT_L*T(i,j) + wtT_R*T(i,j+1)
-        S15(pos+1) = wtT_L*S(i,j) + wtT_R*S(i,j+1)
+        p15(pos+1) = (wt_L*p_b(i,j)) + (wt_R*p_b(i,j+1))
+        dp_y(m,i) = (wt_L*(p_b(i,j) - p_t(i,j))) + (wt_R*(p_b(i,j+1) - p_t(i,j+1)))
+        T15(pos+1) = (wtT_L*T(i,j)) + (wtT_R*T(i,j+1))
+        S15(pos+1) = (wtT_L*S(i,j)) + (wtT_R*S(i,j+1))
         do n=2,5
           T15(pos+n) = T15(pos+1) ; S15(pos+n) = S15(pos+1)
           p15(pos+n) = p15(pos+n-1) - 0.25*dp_y(m,i)
@@ -1464,8 +1486,8 @@ subroutine int_spec_vol_dp_generic_pcm(T, S, p_t, p_b, alpha_ref, HI, EOS, US, d
       ! Use Boole's rule to estimate the interface height anomaly change.
       do m=2,4
         pos = i*15+(m-2)*5
-        intp(m) = dp_y(m,i)*( C1_90*(7.0*(a15(pos+1)+a15(pos+5)) + 32.0*(a15(pos+2)+a15(pos+4)) + &
-                                  12.0*a15(pos+3)))
+        intp(m) = (dp_y(m,i)*( C1_90*(7.0*(a15(pos+1)+a15(pos+5)) + 32.0*(a15(pos+2)+a15(pos+4)) + &
+                                     12.0*a15(pos+3)) ))
       enddo
       ! Use Boole's rule to integrate the interface height anomaly values in y.
       inty_dza(i,j) = C1_90*(7.0*(intp(1)+intp(5)) + 32.0*(intp(2)+intp(4)) + &
@@ -1630,16 +1652,16 @@ subroutine int_spec_vol_dp_generic_plm(T_t, T_b, S_t, S_b, p_t, p_b, alpha_ref, 
 
       do m=2,4
         wt_L = 0.25*real(5-m) ; wt_R = 1.0-wt_L
-        wtT_L = wt_L*hWt_LL + wt_R*hWt_RL ; wtT_R = wt_L*hWt_LR + wt_R*hWt_RR
+        wtT_L = (wt_L*hWt_LL) + (wt_R*hWt_RL) ; wtT_R = (wt_L*hWt_LR) + (wt_R*hWt_RR)
 
         ! T, S, and p are interpolated in the horizontal.  The p interpolation
         ! is linear, but for T and S it may be thickness weighted.
-        P_top = wt_L*p_t(i,j) + wt_R*p_t(i+1,j)
-        P_bot = wt_L*p_b(i,j) + wt_R*p_b(i+1,j)
-        T_top = wtT_L*T_t(i,j) + wtT_R*T_t(i+1,j)
-        T_bot = wtT_L*T_b(i,j) + wtT_R*T_b(i+1,j)
-        S_top = wtT_L*S_t(i,j) + wtT_R*S_t(i+1,j)
-        S_bot = wtT_L*S_b(i,j) + wtT_R*S_b(i+1,j)
+        P_top = (wt_L*p_t(i,j)) + (wt_R*p_t(i+1,j))
+        P_bot = (wt_L*p_b(i,j)) + (wt_R*p_b(i+1,j))
+        T_top = (wtT_L*T_t(i,j)) + (wtT_R*T_t(i+1,j))
+        T_bot = (wtT_L*T_b(i,j)) + (wtT_R*T_b(i+1,j))
+        S_top = (wtT_L*S_t(i,j)) + (wtT_R*S_t(i+1,j))
+        S_bot = (wtT_L*S_b(i,j)) + (wtT_R*S_b(i+1,j))
         dp_90(m,I) = C1_90*(P_bot - P_top)
 
         ! Salinity, temperature and pressure with linear interpolation in the vertical.
@@ -1660,8 +1682,8 @@ subroutine int_spec_vol_dp_generic_plm(T_t, T_b, S_t, S_b, p_t, p_b, alpha_ref, 
         ! Use Boole's rule to estimate the interface height anomaly change.
         ! The integrals at the ends of the segment are already known.
         pos = I*15+(m-2)*5
-        intp(m) = dp_90(m,I)*((7.0*(a15(pos+1)+a15(pos+5)) + &
-                               32.0*(a15(pos+2)+a15(pos+4))) + 12.0*a15(pos+3))
+        intp(m) = (dp_90(m,I)*((7.0*(a15(pos+1)+a15(pos+5)) + &
+                                32.0*(a15(pos+2)+a15(pos+4))) + 12.0*a15(pos+3) ))
       enddo
       ! Use Boole's rule to integrate the interface height anomaly values in x.
       intx_dza(I,j) = C1_90*((7.0*(intp(1)+intp(5)) + 32.0*(intp(2)+intp(4))) + &
@@ -1694,16 +1716,16 @@ subroutine int_spec_vol_dp_generic_plm(T_t, T_b, S_t, S_b, p_t, p_b, alpha_ref, 
 
       do m=2,4
         wt_L = 0.25*real(5-m) ; wt_R = 1.0-wt_L
-        wtT_L = wt_L*hWt_LL + wt_R*hWt_RL ; wtT_R = wt_L*hWt_LR + wt_R*hWt_RR
+        wtT_L = (wt_L*hWt_LL) + (wt_R*hWt_RL) ; wtT_R = (wt_L*hWt_LR) + (wt_R*hWt_RR)
 
         ! T, S, and p are interpolated in the horizontal.  The p interpolation
         ! is linear, but for T and S it may be thickness weighted.
-        P_top = wt_L*p_t(i,j) + wt_R*p_t(i,j+1)
-        P_bot = wt_L*p_b(i,j) + wt_R*p_b(i,j+1)
-        T_top = wtT_L*T_t(i,j) + wtT_R*T_t(i,j+1)
-        T_bot = wtT_L*T_b(i,j) + wtT_R*T_b(i,j+1)
-        S_top = wtT_L*S_t(i,j) + wtT_R*S_t(i,j+1)
-        S_bot = wtT_L*S_b(i,j) + wtT_R*S_b(i,j+1)
+        P_top = (wt_L*p_t(i,j)) + (wt_R*p_t(i,j+1))
+        P_bot = (wt_L*p_b(i,j)) + (wt_R*p_b(i,j+1))
+        T_top = (wtT_L*T_t(i,j)) + (wtT_R*T_t(i,j+1))
+        T_bot = (wtT_L*T_b(i,j)) + (wtT_R*T_b(i,j+1))
+        S_top = (wtT_L*S_t(i,j)) + (wtT_R*S_t(i,j+1))
+        S_bot = (wtT_L*S_b(i,j)) + (wtT_R*S_b(i,j+1))
         dp_90(m,i) = C1_90*(P_bot - P_top)
 
         ! Salinity, temperature and pressure with linear interpolation in the vertical.
@@ -1725,8 +1747,8 @@ subroutine int_spec_vol_dp_generic_plm(T_t, T_b, S_t, S_b, p_t, p_b, alpha_ref, 
         ! Use Boole's rule to estimate the interface height anomaly change.
         ! The integrals at the ends of the segment are already known.
         pos = i*15+(m-2)*5
-        intp(m) = dp_90(m,i) * ((7.0*(a15(pos+1)+a15(pos+5)) + &
-                                 32.0*(a15(pos+2)+a15(pos+4))) + 12.0*a15(pos+3))
+        intp(m) = (dp_90(m,i) * ((7.0*(a15(pos+1)+a15(pos+5)) + &
+                                  32.0*(a15(pos+2)+a15(pos+4))) + 12.0*a15(pos+3)))
       enddo
       ! Use Boole's rule to integrate the interface height anomaly values in x.
       inty_dza(i,J) = C1_90*((7.0*(intp(1)+intp(5)) + 32.0*(intp(2)+intp(4))) + &
