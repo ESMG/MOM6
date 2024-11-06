@@ -53,6 +53,8 @@ subroutine register_tracer(tr_ptr, Reg, param_file, HI, GV, name, longname, unit
                            cmor_name, cmor_units, cmor_longname, net_surfflux_name, NLT_budget_name, &
                            net_surfflux_longname, tr_desc, OBC_inflow, OBC_in_u, OBC_in_v, ad_x, ad_y, &
                            df_x, df_y, ad_2d_x, ad_2d_y, df_2d_x, df_2d_y, advection_xy, registry_diags, &
+                           advectionc_xy, advectionc_x, advectionc_y, &
+                           diffusionc_xy, diffusion_xy, &
                            conc_scale, flux_nameroot, flux_longname, flux_units, flux_scale, &
                            convergence_units, convergence_scale, cmor_tendprefix, diag_form, &
                            restart_CS, mandatory, underflow_conc, Tr_out)
@@ -100,6 +102,12 @@ subroutine register_tracer(tr_ptr, Reg, param_file, HI, GV, name, longname, unit
 
   real, dimension(:,:,:), optional, pointer     :: advection_xy !< convergence of lateral advective tracer fluxes
                                                                 !! [CU H T-1 ~> conc m s-1 or conc kg m-2 s-1]
+  real, dimension(:,:,:), optional, pointer     :: advectionc_xy !< convergence of lateral advection
+  real, dimension(:,:,:), optional, pointer     :: diffusionc_xy !< convergence of lateral diffusion
+  real, dimension(:,:,:), optional, pointer     :: diffusion_xy !< convergence of lateral diffusive tracer fluxes
+  real, dimension(:,:,:), optional, pointer     :: advectionc_x !< lateral advection concentration
+  real, dimension(:,:,:), optional, pointer     :: advectionc_y !< lateral advection concentration
+
   logical,              optional, intent(in)    :: registry_diags !< If present and true, use the registry for
                                                                 !! the diagnostics of this tracer.
   real,                 optional, intent(in)    :: conc_scale   !< A scaling factor used to convert the concentration
@@ -245,6 +253,11 @@ subroutine register_tracer(tr_ptr, Reg, param_file, HI, GV, name, longname, unit
   if (present(df_2d_x)) then ; if (associated(df_2d_x)) Tr%df2d_x => df_2d_x ; endif
 
   if (present(advection_xy)) then ; if (associated(advection_xy)) Tr%advection_xy => advection_xy ; endif
+  if (present(advectionc_xy)) then; if (associated(advectionc_xy)) Tr%advectionc_xy => advectionc_xy ; endif
+  if (present(diffusionc_xy)) then; if (associated(diffusionc_xy)) Tr%diffusionc_xy => diffusionc_xy ; endif
+  if (present(diffusion_xy)) then;  if (associated(diffusion_xy)) Tr%diffusion_xy  => diffusion_xy ;  endif
+  if (present(advectionc_x)) then;  if (associated(advectionc_x)) Tr%advectionc_x  => advectionc_x ;  endif
+  if (present(advectionc_y)) then;  if (associated(advectionc_y)) Tr%advectionc_y  => advectionc_y ;  endif
 
   if (present(restart_CS)) then
     ! Register this tracer to be read from and written to restart files.
@@ -434,16 +447,45 @@ subroutine register_tracer_diagnostics(Reg, h, Time, diag, G, GV, US, use_ALE, u
     if (Tr%id_hbd_dfx_2d > 0) call safe_alloc_ptr(Tr%hbd_dfx_2d,IsdB,IedB,jsd,jed)
     if (Tr%id_hbd_dfy_2d > 0) call safe_alloc_ptr(Tr%hbd_dfy_2d,isd,ied,JsdB,JedB)
 
+    ! The following diagnostics for generic tracer budgets were
+    ! originally developed by Enhui Lao, Fan Yang, and Mathieu Poupon.
+
     Tr%id_adv_xy = register_diag_field('ocean_model', trim(shortnm)//"_advection_xy", &
         diag%axesTL, Time, &
-        'Horizontal convergence of residual mean advective fluxes of '//trim(lowercase(flux_longname)), &
-        conv_units, v_extensive=.true., conversion=Tr%conv_scale*US%s_to_T)
+        'Horizontal convergence of residual mean advective fluxes of '//&
+        trim(lowercase(flux_longname)), conv_units, v_extensive=.true., &
+        conversion=Tr%conv_scale*US%s_to_T)
+    Tr%id_difc_xy = register_diag_field('ocean_model',trim(shortnm)//"_diffusionc_xy", &
+        diag%axesTL, Time, "Horizontal convergence of residual mean diffusive fluxes of "//&
+        trim(shortnm)//' concentration', trim(units)//' s-1')
+    Tr%id_dif_xy = register_diag_field('ocean_model',trim(shortnm)//"_diffusion_xy", &
+        diag%axesTL, Time, "Horizontal convergence of residual mean diffusive fluxes of "//trim(shortnm), &
+        conv_units, conversion=Tr%conv_scale*US%s_to_T)
+    Tr%id_advc_xy = register_diag_field('ocean_model',trim(shortnm)//"_advectionc_xy", &
+        diag%axesTL, Time, "Horizontal convergence of residual mean advective fluxes of "//&
+        trim(shortnm)//' concentration', trim(units)//' s-1')
+    Tr%id_advc_x  = register_diag_field("ocean_model",trim(shortnm)//'_advectionc_x', &
+        diag%axesTL, Time, "Horizontal x mean advective fluxes of "//trim(shortnm)//' concentration', &
+        trim(units)//' s-1')
+    Tr%id_advc_y  = register_diag_field("ocean_model",trim(shortnm)//'_advectionc_y', &
+        diag%axesTL, Time, "Horizontal y mean advective fluxes of "//trim(shortnm)//' concentration', &
+        trim(units)//' s-1')
     Tr%id_adv_xy_2d = register_diag_field('ocean_model', trim(shortnm)//"_advection_xy_2d", &
         diag%axesT1, Time, &
         'Vertical sum of horizontal convergence of residual mean advective fluxes of '//&
         trim(lowercase(flux_longname)), conv_units, conversion=Tr%conv_scale*US%s_to_T)
     if ((Tr%id_adv_xy > 0) .or. (Tr%id_adv_xy_2d > 0)) &
       call safe_alloc_ptr(Tr%advection_xy,isd,ied,jsd,jed,nz)
+    if (Tr%id_difc_xy > 0) &
+      call safe_alloc_ptr(Tr%diffusionc_xy,isd,ied,jsd,jed,nz)
+    if (Tr%id_dif_xy > 0) &
+      call safe_alloc_ptr(Tr%diffusion_xy,isd,ied,jsd,jed,nz)
+    if (Tr%id_advc_xy > 0) &
+      call safe_alloc_ptr(Tr%advectionc_xy,isd,ied,jsd,jed,nz)
+    if (Tr%id_advc_x > 0) &
+      call safe_alloc_ptr(Tr%advectionc_x,isd,ied,jsd,jed,nz)
+    if (Tr%id_advc_y > 0) &
+      call safe_alloc_ptr(Tr%advectionc_y,isd,ied,jsd,jed,nz)
 
     Tr%id_tendency = register_diag_field('ocean_model', trim(shortnm)//'_tendency', &
         diag%axesTL, Time, &
@@ -739,6 +781,11 @@ subroutine post_tracer_transport_diagnostics(G, GV, Reg, h_diag, diag)
     if (Tr%id_dfx_2d > 0) call post_data(Tr%id_dfx_2d, Tr%df2d_x, diag)
     if (Tr%id_dfy_2d > 0) call post_data(Tr%id_dfy_2d, Tr%df2d_y, diag)
     if (Tr%id_adv_xy > 0) call post_data(Tr%id_adv_xy, Tr%advection_xy, diag, alt_h=h_diag)
+    if (Tr%id_advc_xy > 0) call post_data(Tr%id_advc_xy, Tr%advectionc_xy, diag, alt_h=h_diag)
+    if (Tr%id_difc_xy > 0) call post_data(Tr%id_difc_xy, Tr%diffusionc_xy, diag, alt_h=h_diag)
+    if (Tr%id_dif_xy > 0) call post_data(Tr%id_dif_xy, Tr%diffusion_xy, diag, alt_h=h_diag)
+    if (Tr%id_advc_x > 0)  call post_data(Tr%id_advc_x, Tr%advectionc_x, diag, alt_h=h_diag)
+    if (Tr%id_advc_y > 0)  call post_data(Tr%id_advc_y, Tr%advectionc_y, diag, alt_h=h_diag)
     if (Tr%id_adv_xy_2d > 0) then
       work2d(:,:) = 0.0
       do k=1,nz ; do j=js,je ; do i=is,ie

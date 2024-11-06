@@ -70,7 +70,7 @@ contains
   !> Calls the corresponding generic_X_update_from_source routine for each package X
   subroutine generic_tracer_source(Temp,Salt,rho_dzt,dzt,hblt_depth,ilb,jlb,tau,dtts,&
        grid_dat,model_time,nbands,max_wavelength_band,sw_pen_band,opacity_band,internal_heat,&
-       frunoff,grid_ht, current_wave_stress, sosga, geolat, eqn_of_state)
+       frunoff,grid_ht, current_wave_stress, sosga, geolat, photo_acc_dpth)
     integer,                        intent(in) :: ilb    !< Lower bounds of x extent of input arrays on data domain
     integer,                        intent(in) :: jlb    !< Lower bounds of y extent of input arrays on data domain
     real, dimension(ilb:,jlb:,:),   intent(in) :: Temp   !< Potential temperature [deg C]
@@ -97,7 +97,7 @@ contains
     real, dimension(ilb:,jlb:),optional , intent(in) :: current_wave_stress !< Unknown, and presently unused by MOM6
     real,                      optional , intent(in) :: sosga !< Global average sea surface salinity [ppt]
     real, dimension(ilb:,jlb:),optional,  intent(in) :: geolat !< Latitude
-    type(EOS_type),            optional,  intent(in) :: eqn_of_state !< A pointer to the equation of state
+    real, dimension(ilb:,jlb:), optional, intent(in) :: photo_acc_dpth
   end subroutine generic_tracer_source
 
   !> Update the tracers from bottom fluxes

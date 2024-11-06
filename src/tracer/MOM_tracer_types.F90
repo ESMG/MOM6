@@ -48,6 +48,12 @@ type, public :: tracer_type
 
   real, dimension(:,:,:), pointer :: advection_xy   => NULL() !< convergence of lateral advective tracer fluxes
                                                               !! [CU H T-1 ~> conc m s-1 or conc kg m-2 s-1]
+  real, dimension(:,:,:), pointer :: advectionc_xy  => NULL() !< convergence of lateral advection concentration
+  real, dimension(:,:,:), pointer :: diffusionc_xy  => NULL() !< convergence of lateral diffusion concentration
+  real, dimension(:,:,:), pointer :: diffusion_xy   => NULL() !< convergence of lateral diffusion content
+  real, dimension(:,:,:), pointer :: advectionc_x   => NULL() !< lateral advection concentration
+  real, dimension(:,:,:), pointer :: advectionc_y   => NULL() !< lateral advection concentration
+
 !  real, dimension(:,:,:), pointer :: diff_cont_xy   => NULL() !< convergence of lateral diffusive tracer fluxes
 !                                                              !! [CU H T-1 ~> conc m s-1 or conc kg m-2 s-1]
 !  real, dimension(:,:,:), pointer :: diff_conc_xy   => NULL() !< convergence of lateral diffusive tracer fluxes
@@ -108,6 +114,8 @@ type, public :: tracer_type
   integer :: id_hbd_dfx_2d = -1, id_hbd_dfy_2d = -1
   integer :: id_adx_2d = -1, id_ady_2d = -1, id_dfx_2d = -1, id_dfy_2d = -1
   integer :: id_adv_xy = -1, id_adv_xy_2d = -1
+  integer :: id_advc_xy = -1, id_advc_x = -1, id_advc_y = -1
+  integer :: id_difc_xy = -1, id_dif_xy = -1
   integer :: id_dfxy_cont = -1, id_dfxy_cont_2d = -1, id_dfxy_conc = -1
   integer :: id_hbdxy_cont = -1, id_hbdxy_cont_2d = -1, id_hbdxy_conc = -1
   integer :: id_remap_conc = -1, id_remap_cont = -1, id_remap_cont_2d = -1

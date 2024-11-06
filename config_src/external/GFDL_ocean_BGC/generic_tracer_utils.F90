@@ -20,6 +20,7 @@ implicit none ; private
     real, pointer, dimension(:,:,:,:) :: field  => NULL()
     !> Tracer concentration in river runoff
     real, allocatable, dimension(:,:) :: trunoff
+    real, allocatable, dimension(:,:,:)  :: boundary_forcing_tend !< Tendency for budget diagnostics
     logical :: requires_restart = .true. !< Unknown
     character(len=fm_string_len) :: src_file !< Tracer source filename
     character(len=fm_string_len) :: src_var_name !< Tracer source variable name
@@ -27,6 +28,7 @@ implicit none ; private
     character(len=fm_string_len) :: src_var_gridspec !< Tracer source grid file name
     character(len=fm_string_len) :: obc_src_file_name !< Boundary condition tracer source filename
     character(len=fm_string_len) :: obc_src_field_name !< Boundary condition tracer source fieldname
+    integer :: diag_id_boundary_forcing_tend = -1 !< Budget diagnostic id
     integer :: src_var_record !< Unknown
     logical :: runoff_added_to_stf = .false. !< Has flux in from runoff been added to stf?
     logical :: requires_src_info = .false. !< Unknown

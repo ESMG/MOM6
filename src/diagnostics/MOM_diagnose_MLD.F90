@@ -30,7 +30,7 @@ contains
 !> Diagnose a mixed layer depth (MLD) determined by a given density difference with the surface.
 !> This routine is appropriate in MOM_diabatic_aux due to its position within the time stepping.
 subroutine diagnoseMLDbyDensityDifference(id_MLD, h, tv, densityDiff, G, GV, US, diagPtr, &
-                                          ref_h_mld, id_ref_z, id_ref_rho, id_N2subML, id_MLDsq, dz_subML)
+                                          ref_h_mld, id_ref_z, id_ref_rho, id_N2subML, id_MLDsq, dz_subML, MLD_out)
   type(ocean_grid_type),   intent(in) :: G           !< Grid type
   type(verticalGrid_type), intent(in) :: GV          !< ocean vertical grid structure
   type(unit_scale_type),   intent(in) :: US          !< A dimensional unit scaling type
@@ -44,6 +44,8 @@ subroutine diagnoseMLDbyDensityDifference(id_MLD, h, tv, densityDiff, G, GV, US,
   real,                    intent(in) :: ref_h_mld   !< Depth of the calculated "surface" densisty [Z ~> m]
   integer,                 intent(in) :: id_ref_z    !< Handle (ID) of reference depth diagnostic
   integer,                 intent(in) :: id_ref_rho  !< Handle (ID) of reference density diagnostic
+  real, dimension(SZI_(G),SZJ_(G)), &
+              optional, intent(inout) :: MLD_out     !< Send MLD to other routines [Z ~> m]
   integer,       optional, intent(in) :: id_N2subML  !< Optional handle (ID) of subML stratification
   integer,       optional, intent(in) :: id_MLDsq    !< Optional handle (ID) of squared MLD
   real,          optional, intent(in) :: dz_subML    !< The distance over which to calculate N2subML
@@ -234,11 +236,13 @@ subroutine diagnoseMLDbyDensityDifference(id_MLD, h, tv, densityDiff, G, GV, US,
   if ((id_ref_z > 0) .and. (pRef_MLD(is)/=0.)) call post_data(id_ref_z, z_ref_diag , diagPtr)
   if (id_ref_rho > 0) call post_data(id_ref_rho, rhoSurf_2d , diagPtr)
 
+  if (present(MLD_out)) MLD_out(:,:) = MLD(:,:)
+
 end subroutine diagnoseMLDbyDensityDifference
 
 !> Diagnose a mixed layer depth (MLD) determined by the depth a given energy value would mix.
 !> This routine is appropriate in MOM_diabatic_aux due to its position within the time stepping.
-subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, diagPtr)
+subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, diagPtr, MLD_out)
   ! Author: Brandon Reichl
   ! Date: October 2, 2020
   ! //
@@ -270,6 +274,8 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, diagPtr)
   type(thermo_var_ptrs),   intent(in) :: tv          !< Structure containing pointers to any
                                                      !! available thermodynamic fields.
   type(diag_ctrl),         pointer    :: diagPtr     !< Diagnostics structure
+  real, dimension(SZI_(G),SZJ_(G)), &
+              optional, intent(inout) :: MLD_out     !< Send MLD to other routines [Z ~> m]
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G),3) :: MLD  ! Diagnosed mixed layer depth [Z ~> m].
@@ -466,6 +472,8 @@ subroutine diagnoseMLDbyEnergy(id_MLD, h, tv, G, GV, US, Mixing_Energy, diagPtr)
   if (id_MLD(1) > 0) call post_data(id_MLD(1), MLD(:,:,1), diagPtr)
   if (id_MLD(2) > 0) call post_data(id_MLD(2), MLD(:,:,2), diagPtr)
   if (id_MLD(3) > 0) call post_data(id_MLD(3), MLD(:,:,3), diagPtr)
+
+  if (present(MLD_out)) MLD_out(:,:) = MLD(:,:,1)
 
 end subroutine diagnoseMLDbyEnergy
 
