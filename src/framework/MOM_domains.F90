@@ -350,7 +350,7 @@ subroutine MOM_domains_init(MOM_dom, param_file, symmetric, static_memory, &
   else
     call get_param(param_file, mdl, trim(layout_nm), layout, &
                  "The processor layout to be used, or 0, 0 to automatically set the layout "//&
-                 "based on the number of processors.", default=0, do_not_log=.true.)
+                 "based on the number of processors.", defaults=(/0, 0/), do_not_log=.true.)
     call get_param(param_file, mdl, trim(niproc_nm), nip_parsed, &
                  "The number of processors in the x-direction.", default=-1, do_not_log=.true.)
     call get_param(param_file, mdl, trim(njproc_nm), njp_parsed, &
@@ -436,7 +436,7 @@ subroutine MOM_domains_init(MOM_dom, param_file, symmetric, static_memory, &
   else
     call get_param(param_file, mdl, trim(io_layout_nm), io_layout, &
                    "The processor layout to be used, or 0,0 to automatically set the io_layout "//&
-                   "to be the same as the layout.", default=1, layoutParam=.true.)
+                   "to be the same as the layout.", defaults=(/1, 1/), layoutParam=.true.)
   endif
 
   call create_MOM_domain(MOM_dom, n_global, n_halo, reentrant, tripolar_N, layout, &
@@ -680,10 +680,10 @@ subroutine write_auto_mask_file(mask_table, layout, npes, filename)
   true_num_masked_blocks = layout(1) * layout(2) - npes
 
   call open_ASCII_file(file_ascii, trim(filename), action=WRITEONLY_FILE)
-  write(file_ascii, '(I0)'), true_num_masked_blocks
-  write(file_ascii, '(I0,",",I0)'), layout(1), layout(2)
+  write(file_ascii, '(I0)') true_num_masked_blocks
+  write(file_ascii, '(I0,",",I0)') layout(1), layout(2)
   do p = 1, true_num_masked_blocks
-    write(file_ascii, '(I0,",",I0)'), mask_table(p,1), mask_table(p,2)
+    write(file_ascii, '(I0,",",I0)') mask_table(p,1), mask_table(p,2)
   enddo
   call close_file(file_ascii)
 end subroutine write_auto_mask_file

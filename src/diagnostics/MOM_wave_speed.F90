@@ -51,7 +51,9 @@ type, public :: wave_speed_CS ; private
                                        !! are simply reported as 0 [L T-1 ~> m s-1].  A non-negative
                                        !! value must be specified via a call to wave_speed_init for
                                        !! the subroutine wave_speeds to be used (but not wave_speed).
-  type(remapping_CS) :: remapping_CS   !< Used for vertical remapping when calculating equivalent barotropic
+  type(remapping_CS) :: remap_2018_CS  !< Used for vertical remapping when calculating equivalent barotropic
+                                       !! mode structure for answer dates below 20190101.
+  type(remapping_CS) :: remap_CS       !< Used for vertical remapping when calculating equivalent barotropic
                                        !! mode structure.
   integer :: remap_answer_date = 99991231 !< The vintage of the order of arithmetic and expressions to use
                                        !! for remapping.  Values below 20190101 recover the remapping
@@ -97,7 +99,7 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, halo_size, use_ebt_mode, mono_N
     S_int, &      ! Salinity interpolated to interfaces [S ~> ppt]
     H_top, &      ! The distance of each filtered interface from the ocean surface [H ~> m or kg m-2]
     H_bot, &      ! The distance of each filtered interface from the bottom [H ~> m or kg m-2]
-    gprime        ! The reduced gravity across each interface [L2 H-1 T-2 ~> m s-2 or m4 s-1 kg-1].
+    gprime        ! The reduced gravity across each interface [L2 H-1 T-2 ~> m s-2 or m4 s-2 kg-1].
   real, dimension(SZK_(GV)) :: &
     Igl, Igu      ! The inverse of the reduced gravity across an interface times
                   ! the thickness of the layer below (Igl) or above (Igu) it, in [T2 L-2 ~> s2 m-2].
@@ -161,7 +163,7 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, halo_size, use_ebt_mode, mono_N
   integer :: i, j, k, k2, itt, is, ie, js, je, nz, halo
   real :: hw      ! The mean of the adjacent layer thicknesses [H ~> m or kg m-2]
   real :: sum_hc  ! The sum of the layer thicknesses [H ~> m or kg m-2]
-  real :: gp      ! A limited local copy of gprime [L2 H-1 T-2 ~> m s-2 or m4 s-1 kg-1]
+  real :: gp      ! A limited local copy of gprime [L2 H-1 T-2 ~> m s-2 or m4 s-2 kg-1]
   real :: N2min   ! A minimum buoyancy frequency, including a slope rescaling factor [L2 H-2 T-2 ~> s-2 or m6 kg-2 s-2]
   logical :: below_mono_N2_frac  ! True if an interface is below the fractional depth where N2 should not increase.
   logical :: below_mono_N2_depth ! True if an interface is below the absolute depth where N2 should not increase.
@@ -674,13 +676,11 @@ subroutine wave_speed(h, tv, G, GV, US, cg1, CS, halo_size, use_ebt_mode, mono_N
             endif
 
             if (CS%remap_answer_date < 20190101) then
-              call remapping_core_h(CS%remapping_CS, kc, Hc(:), mode_struct, &
-                                    nz, h(i,j,:), modal_structure(i,j,:), &
-                                    1.0e-30*GV%m_to_H, 1.0e-10*GV%m_to_H)
+              call remapping_core_h(CS%remap_2018_CS, kc, Hc(:), mode_struct, &
+                                    nz, h(i,j,:), modal_structure(i,j,:))
             else
-              call remapping_core_h(CS%remapping_CS, kc, Hc(:), mode_struct, &
-                                    nz, h(i,j,:), modal_structure(i,j,:), &
-                                    GV%H_subroundoff, GV%H_subroundoff)
+              call remapping_core_h(CS%remap_CS, kc, Hc(:), mode_struct, &
+                                    nz, h(i,j,:), modal_structure(i,j,:))
             endif
           endif
         else
@@ -853,7 +853,7 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, w_struct, u_struct, u_s
   real :: drxh_sum   ! The sum of density differences across interfaces times thicknesses [R H ~> kg m-2 or kg2 m-5]
   real :: dSpVxh_sum ! The sum of specific volume differences across interfaces times
                      ! thicknesses [R-1 H ~> m4 kg-1 or m], negative for stable stratification.
-  real :: g_Rho0     ! G_Earth/Rho0 [L2 T-2 H-1 R-1 ~> m4 s-2 kg-1 pr m7 s-2 kg-1].
+  real :: g_Rho0     ! G_Earth/Rho0 [L2 T-2 H-1 R-1 ~> m4 s-2 kg-1 or m7 s-2 kg-2].
   real :: tol_Hfrac  ! Layers that together are smaller than this fraction of
                      ! the total water column can be merged for efficiency [nondim].
   real :: min_h_frac ! tol_Hfrac divided by the total number of layers [nondim].
@@ -1303,9 +1303,9 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, w_struct, u_struct, u_s
               ! renormalization of the integral of the profile
               w2avg = 0.0
               do k=1,kc
-                w2avg = w2avg + 0.5*(mode_struct(K)**2+mode_struct(K+1)**2)*Hc(k) ! [H L4 T-4]
+                w2avg = w2avg + 0.5*(mode_struct(K)**2+mode_struct(K+1)**2)*Hc(k) ! [H L4 T-4 ~> m5 s-4 or kg m2 s-4]
               enddo
-              renorm = sqrt(htot(i)*a_int/w2avg) ! [T2 L-2]
+              renorm = sqrt(htot(i)*a_int/w2avg) ! [T2 L-2 ~> s2 m-2]
               do K=1,kc+1 ; mode_struct(K) = renorm * mode_struct(K) ; enddo
               ! after renorm, mode_struct is again [nondim]
               if (abs(dlam) < tol_solve*lam_1) exit
@@ -1357,9 +1357,8 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, w_struct, u_struct, u_s
                                     nz, h(i,j,:), modal_structure(:), .false.)
 
             ! for u (remap) onto all layers
-            call remapping_core_h(CS%remapping_CS, kc, Hc(1:kc), mode_struct_fder(1:kc), &
-                                  nz, h(i,j,:), modal_structure_fder(:), &
-                                  GV%H_subroundoff, GV%H_subroundoff)
+            call remapping_core_h(CS%remap_CS, kc, Hc(1:kc), mode_struct_fder(1:kc), &
+                                  nz, h(i,j,:), modal_structure_fder(:))
 
             ! write the wave structure
             do k=1,nz+1
@@ -1533,9 +1532,8 @@ subroutine wave_speeds(h, tv, G, GV, US, nmodes, cn, CS, w_struct, u_struct, u_s
                                         nz, h(i,j,:), modal_structure(:), .false.)
 
                 ! for u (remap) onto all layers
-                call remapping_core_h(CS%remapping_CS, kc, Hc(1:kc), mode_struct_fder(1:kc), &
-                                      nz, h(i,j,:), modal_structure_fder(:), &
-                                      GV%H_subroundoff, GV%H_subroundoff)
+                call remapping_core_h(CS%remap_CS, kc, Hc(1:kc), mode_struct_fder(1:kc), &
+                                      nz, h(i,j,:), modal_structure_fder(:))
 
                 ! write the wave structure
                 ! note that m=1 solves for 2nd mode,...
@@ -1610,10 +1608,11 @@ subroutine tridiag_det(a, c, ks, ke, lam, det, ddet, row_scale)
 end subroutine tridiag_det
 
 !> Initialize control structure for MOM_wave_speed
-subroutine wave_speed_init(CS, use_ebt_mode, mono_N2_column_fraction, mono_N2_depth, remap_answers_2018, &
+subroutine wave_speed_init(CS, GV, use_ebt_mode, mono_N2_column_fraction, mono_N2_depth, remap_answers_2018, &
                            remap_answer_date, better_speed_est, om4_remap_via_sub_cells, &
                            min_speed, wave_speed_tol, c1_thresh)
   type(wave_speed_CS), intent(inout) :: CS  !< Wave speed control struct
+  type(verticalGrid_type), intent(in) :: GV !< Vertical grid structure
   logical, optional, intent(in) :: use_ebt_mode  !< If true, use the equivalent
                                      !! barotropic mode instead of the first baroclinic mode.
   real,    optional, intent(in) :: mono_N2_column_fraction !< The lower fraction of water column over
@@ -1657,10 +1656,18 @@ subroutine wave_speed_init(CS, use_ebt_mode, mono_N2_column_fraction, mono_N2_de
                             remap_answers_2018=remap_answers_2018, remap_answer_date=remap_answer_date, &
                             c1_thresh=c1_thresh)
 
-  ! The remap_answers_2018 argument here is irrelevant, because remapping is hard-coded to use PLM.
-  call initialize_remapping(CS%remapping_CS, 'PLM', boundary_extrapolation=.false., &
+  ! The following remapping is only used for wave_speed with pre-2019 answers.
+  if (CS%remap_answer_date < 20190101) &
+    call initialize_remapping(CS%remap_2018_CS, 'PLM', boundary_extrapolation=.false., &
+                              om4_remap_via_sub_cells=om4_remap_via_sub_cells, &
+                              answer_date=CS%remap_answer_date, &
+                              h_neglect=1.0e-30*GV%m_to_H, h_neglect_edge=1.0e-10*GV%m_to_H)
+
+  ! This is used in wave_speeds in all cases, and in wave_speed with newer answers.
+  call initialize_remapping(CS%remap_CS, 'PLM', boundary_extrapolation=.false., &
                             om4_remap_via_sub_cells=om4_remap_via_sub_cells, &
-                            answer_date=CS%remap_answer_date)
+                            answer_date=CS%remap_answer_date, &
+                            h_neglect=GV%H_subroundoff, h_neglect_edge=GV%H_subroundoff)
 
 end subroutine wave_speed_init
 

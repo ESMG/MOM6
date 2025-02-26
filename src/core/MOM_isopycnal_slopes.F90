@@ -240,15 +240,19 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
     enddo ; enddo
   enddo
 
+  do I=is-1,ie
+    GxSpV_u(I) = G_Rho0  !This will be changed if both use_EOS and allocated(tv%SpV_avg) are true
+  enddo
   !$OMP parallel do default(none) shared(nz,is,ie,js,je,IsdB,use_EOS,G,GV,US,pres,T,S,tv,h,e, &
   !$OMP                                  h_neglect,dz_neglect,h_neglect2, &
   !$OMP                                  present_N2_u,G_Rho0,N2_u,slope_x,dzSxN,EOSdom_u,EOSdom_h1, &
   !$OMP                                  local_open_u_BC,dzu,OBC,use_stanley) &
   !$OMP                          private(drdiA,drdiB,drdkL,drdkR,pres_u,T_u,S_u,      &
   !$OMP                                  drho_dT_u,drho_dS_u,hg2A,hg2B,hg2L,hg2R,haA, &
-  !$OMP                                  drho_dT_dT_h,scrap,pres_h,T_h,S_h,GxSpV_u, &
+  !$OMP                                  drho_dT_dT_h,scrap,pres_h,T_h,S_h, &
   !$OMP                                  haB,haL,haR,dzaL,dzaR,wtA,wtB,wtL,wtR,drdz,  &
-  !$OMP                                  drdx,mag_grad2,slope,l_seg)
+  !$OMP                                  drdx,mag_grad2,slope,l_seg) &
+  !$OMP                          firstprivate(GxSpV_u)
   do j=js,je ; do K=nz,2,-1
     if (.not.(use_EOS)) then
       drdiA = 0.0 ; drdiB = 0.0
@@ -269,10 +273,6 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
           do I=is-1,ie
             GxSpV_u(I) = GV%g_Earth *  0.25* ((tv%SpV_avg(i,j,k) + tv%SpV_avg(i+1,j,k)) + &
                                               (tv%SpV_avg(i,j,k-1) + tv%SpV_avg(i+1,j,k-1)))
-          enddo
-        else
-          do I=is-1,ie
-            GxSpV_u(I) = G_Rho0
           enddo
         endif
       endif
@@ -334,7 +334,7 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
       wtA = hg2A*haB ; wtB = hg2B*haA
       wtL = hg2L*(haR*dzaR) ; wtR = hg2R*(haL*dzaL)
 
-      drdz = (wtL * drdkL + wtR * drdkR) / (dzaL*wtL + dzaR*wtR)
+      drdz = ((wtL * drdkL) + (wtR * drdkR)) / ((dzaL*wtL) + (dzaR*wtR))
       ! The expression for drdz above is mathematically equivalent to:
       !   drdz = ((hg2L/haL) * drdkL/dzaL + (hg2R/haR) * drdkR/dzaR) / &
       !          ((hg2L/haL) + (hg2R/haR))
@@ -377,13 +377,16 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
       endif
       slope_x(I,j,K) = slope
       if (present(dzSxN)) &
-        dzSxN(I,j,K) = sqrt( GxSpV_u(I) * max(0., wtL * ( dzaL * drdkL ) &
-                                                + wtR * ( dzaR * drdkR )) / (wtL + wtR) ) & ! dz * N
+        dzSxN(I,j,K) = sqrt( GxSpV_u(I) * max(0., (wtL * ( dzaL * drdkL )) &
+                                                + (wtR * ( dzaR * drdkR ))) / (wtL + wtR) ) & ! dz * N
                        * abs(slope) * G%mask2dCu(I,j) ! x-direction contribution to S^2
 
     enddo ! I
   enddo ; enddo ! end of j-loop
 
+  do i=is,ie
+    GxSpV_v(i) = G_Rho0  !This will be changed if both use_EOS and allocated(tv%SpV_avg) are true
+  enddo
   ! Calculate the meridional isopycnal slope.
   !$OMP parallel do default(none) shared(nz,is,ie,js,je,IsdB,use_EOS,G,GV,US,pres,T,S,tv, &
   !$OMP                                  h,h_neglect,e,dz_neglect, &
@@ -391,10 +394,11 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
   !$OMP                                  dzv,local_open_v_BC,OBC,use_stanley) &
   !$OMP                          private(drdjA,drdjB,drdkL,drdkR,pres_v,T_v,S_v,      &
   !$OMP                                  drho_dT_v,drho_dS_v,hg2A,hg2B,hg2L,hg2R,haA, &
-  !$OMP                                  drho_dT_dT_h,scrap,pres_h,T_h,S_h,GxSpV_v, &
+  !$OMP                                  drho_dT_dT_h,scrap,pres_h,T_h,S_h, &
   !$OMP                                  drho_dT_dT_hr,pres_hr,T_hr,S_hr,             &
   !$OMP                                  haB,haL,haR,dzaL,dzaR,wtA,wtB,wtL,wtR,drdz,  &
-  !$OMP                                  drdy,mag_grad2,slope,l_seg)
+  !$OMP                                  drdy,mag_grad2,slope,l_seg) &
+  !$OMP                          firstprivate(GxSpV_v)
   do J=js-1,je ; do K=nz,2,-1
     if (.not.(use_EOS)) then
       drdjA = 0.0 ; drdjB = 0.0
@@ -415,10 +419,6 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
           do i=is,ie
             GxSpV_v(i) = GV%g_Earth *  0.25* ((tv%SpV_avg(i,j,k) + tv%SpV_avg(i,j+1,k)) + &
                                               (tv%SpV_avg(i,j,k-1) + tv%SpV_avg(i,j+1,k-1)))
-          enddo
-        else
-          do i=is,ie
-            GxSpV_v(i) = G_Rho0
           enddo
         endif
       endif
@@ -486,7 +486,7 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
       wtA = hg2A*haB ; wtB = hg2B*haA
       wtL = hg2L*(haR*dzaR) ; wtR = hg2R*(haL*dzaL)
 
-      drdz = (wtL * drdkL + wtR * drdkR) / (dzaL*wtL + dzaR*wtR)
+      drdz = ((wtL * drdkL) + (wtR * drdkR)) / ((dzaL*wtL) + (dzaR*wtR))
       ! The expression for drdz above is mathematically equivalent to:
       !   drdz = ((hg2L/haL) * drdkL/dzaL + (hg2R/haR) * drdkR/dzaR) / &
       !          ((hg2L/haL) + (hg2R/haR))
@@ -527,8 +527,8 @@ subroutine calc_isoneutral_slopes(G, GV, US, h, e, tv, dt_kappa_smooth, use_stan
       endif
       slope_y(i,J,K) = slope
       if (present(dzSyN)) &
-        dzSyN(i,J,K) = sqrt( GxSpV_v(i) * max(0., wtL * ( dzaL * drdkL ) &
-                                                + wtR * ( dzaR * drdkR )) / (wtL + wtR) ) & ! dz * N
+        dzSyN(i,J,K) = sqrt( GxSpV_v(i) * max(0., (wtL * ( dzaL * drdkL )) &
+                                                + (wtR * ( dzaR * drdkR ))) / (wtL + wtR) ) & ! dz * N
                         * abs(slope) * G%mask2dCv(i,J) ! x-direction contribution to S^2
 
     enddo ! i

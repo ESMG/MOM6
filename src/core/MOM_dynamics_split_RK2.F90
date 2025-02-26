@@ -154,8 +154,7 @@ type, public :: MOM_dyn_split_RK2_CS ; private
   logical :: split_bottom_stress  !< If true, provide the bottom stress
                                   !! calculated by the vertical viscosity to the
                                   !! barotropic solver.
-  logical :: calc_dtbt            !< If true, calculate the barotropic time-step
-                                  !! dynamically.
+  logical :: dtbt_use_bt_cont     !< If true, use BT_cont to calculate DTBT.
   logical :: store_CAu            !< If true, store the Coriolis and advective accelerations at the
                                   !! end of the timestep for use in the next predictor step.
   logical :: CAu_pred_stored      !< If true, the Coriolis and advective accelerations at the
@@ -178,7 +177,8 @@ type, public :: MOM_dyn_split_RK2_CS ; private
   logical :: debug_OBC !< If true, do debugging calls for open boundary conditions.
   logical :: fpmix = .false.                 !< If true, applies profiles of momentum flux magnitude and direction.
   logical :: module_is_initialized = .false. !< Record whether this module has been initialized.
-  logical :: visc_rem_dt_fix = .false. !<If true, use dt rather than dt_pred for vertvisc_rem at the end of predictor.
+  logical :: visc_rem_dt_bug = .true. !< If true, recover a bug that uses dt_pred rather than dt for vertvisc_rem
+                                      !! at the end of predictor.
 
   !>@{ Diagnostic IDs
   integer :: id_uold   = -1, id_vold   = -1
@@ -647,7 +647,15 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
   endif
 
   call cpu_clock_begin(id_clock_btstep)
-  if (calc_dtbt) call set_dtbt(G, GV, US, CS%barotropic_CSp, eta, CS%pbce)
+  if (calc_dtbt) then
+    if (CS%dtbt_use_bt_cont .and. associated(CS%BT_cont)) then
+      call set_dtbt(G, GV, US, CS%barotropic_CSp, CS%pbce, BT_cont=CS%BT_cont)
+    else
+      ! In the following call, eta is only used when NONLINEAR_BT_CONTINUITY is True. Otherwise, dtbt is effectively
+      ! calculated with eta=0. Note that NONLINEAR_BT_CONTINUITY is False if BT_CONT is used, which is the default.
+      call set_dtbt(G, GV, US, CS%barotropic_CSp, CS%pbce, eta=eta)
+    endif
+  endif
   if (showCallTree) call callTree_enter("btstep(), MOM_barotropic.F90")
   ! This is the predictor step call to btstep.
   ! The CS%ADp argument here stores the weights for certain integrated diagnostics.
@@ -736,10 +744,10 @@ subroutine step_MOM_dyn_split_RK2(u_inst, v_inst, h, tv, visc, Time_local, dt, f
     call start_group_pass(CS%pass_uvp, G%Domain, clock=id_clock_pass)
     call cpu_clock_begin(id_clock_vertvisc)
   endif
-  if (CS%visc_rem_dt_fix) then
-    call vertvisc_remnant(visc, CS%visc_rem_u, CS%visc_rem_v, dt, G, GV, US, CS%vertvisc_CSp)
-  else
+  if (CS%visc_rem_dt_bug) then
     call vertvisc_remnant(visc, CS%visc_rem_u, CS%visc_rem_v, dt_pred, G, GV, US, CS%vertvisc_CSp)
+  else
+    call vertvisc_remnant(visc, CS%visc_rem_u, CS%visc_rem_v, dt, G, GV, US, CS%vertvisc_CSp)
   endif
   call cpu_clock_end(id_clock_vertvisc)
 
@@ -1409,7 +1417,8 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
                  "If SPLIT is false and USE_RK2 is true, BEGW can be "//&
                  "between 0 and 0.5 to damp gravity waves.", &
                  units="nondim", default=0.0)
-
+  call get_param(param_file, mdl, "SET_DTBT_USE_BT_CONT", CS%dtbt_use_bt_cont, &
+                 "If true, use BT_CONT to calculate DTBT if possible.", default=.false.)
   call get_param(param_file, mdl, "SPLIT_BOTTOM_STRESS", CS%split_bottom_stress, &
                  "If true, provide the bottom stress calculated by the "//&
                  "vertical viscosity to the barotropic solver.", default=.false.)
@@ -1439,16 +1448,14 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
                  default=.false.)
   call get_param(param_file, mdl, "VISC_REM_BUG", visc_rem_bug, &
                  "If true, visc_rem_[uv] in split mode is incorrectly calculated or accounted "//&
-                 "for in three places. This parameter controls the defaults of three individual "//&
-                 "flags, VISC_REM_TIMESTEP_FIX in MOM_dynamics_split_RK2(b), "//&
-                 "VISC_REM_BT_WEIGHT_FIX in MOM_barotropic, and VISC_REM_CONT_HVEL_FIX in "//&
-                 "MOM_continuity_PPM. Eventually, the three individual flags should be removed "//&
-                 "after tests and the default of VISC_REM_BUG should be to False.", default=.true.)
-  call get_param(param_file, mdl, "VISC_REM_TIMESTEP_FIX", CS%visc_rem_dt_fix, &
-                 "If true, use dt rather than dt_pred in vertvisc_remnant() at the end of "//&
-                 "predictor stage for the following continuity() call and btstep() call "//&
-                 "in the corrector step. This flag should be used with "//&
-                 "VISC_REM_BT_WEIGHT_FIX.", default=.not.visc_rem_bug)
+                 "for in two places. This parameter controls the defaults of two individual "//&
+                 "flags, VISC_REM_TIMESTEP_BUG in MOM_dynamics_split_RK2(b) and "//&
+                 "VISC_REM_BT_WEIGHT_BUG in MOM_barotropic.", default=.true.)
+  call get_param(param_file, mdl, "VISC_REM_TIMESTEP_BUG", CS%visc_rem_dt_bug, &
+                 "If true, recover a bug that uses dt_pred rather than dt in "//&
+                 "vertvisc_remnant() at the end of predictor stage for the following "//&
+                 "continuity() and btstep() calls in the corrector step. Default of this flag "//&
+                 "is set by VISC_REM_BUG", default=visc_rem_bug)
 
   allocate(CS%taux_bot(IsdB:IedB,jsd:jed), source=0.0)
   allocate(CS%tauy_bot(isd:ied,JsdB:JedB), source=0.0)
@@ -1507,7 +1514,7 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
   call continuity_init(Time, G, GV, US, param_file, diag, CS%continuity_CSp)
   cont_stencil = continuity_stencil(CS%continuity_CSp)
   call CoriolisAdv_init(Time, G, GV, US, param_file, diag, CS%ADp, CS%CoriolisAdv)
-  if (CS%calculate_SAL) call SAL_init(G, US, param_file, CS%SAL_CSp)
+  if (CS%calculate_SAL) call SAL_init(G, GV, US, param_file, CS%SAL_CSp)
   if (CS%use_tides) then
     call tidal_forcing_init(Time, G, US, param_file, CS%tides_CSp, CS%HA_CSp)
     HA_CSp => CS%HA_CSp
@@ -1546,8 +1553,9 @@ subroutine initialize_dyn_split_RK2(u, v, h, tv, uh, vh, eta, Time, G, GV, US, p
   ! Copy eta into an output array.
   do j=js,je ; do i=is,ie ; eta(i,j) = CS%eta(i,j) ; enddo ; enddo
 
-  call barotropic_init(u, v, h, CS%eta, Time, G, GV, US, param_file, diag, &
-                       CS%barotropic_CSp, restart_CS, calc_dtbt, CS%BT_cont, CS%SAL_CSp, CS%HA_CSp)
+  call barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, &
+                       CS%barotropic_CSp, restart_CS, calc_dtbt, CS%BT_cont, &
+                       CS%OBC, CS%SAL_CSp, HA_CSp)
 
   if (.not. query_initialized(CS%diffu, "diffu", restart_CS) .or. &
       .not. query_initialized(CS%diffv, "diffv", restart_CS)) then

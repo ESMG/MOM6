@@ -105,6 +105,7 @@ subroutine copy_dyngrid_to_MOM_grid(dG, oG, US)
     oG%dyBu(I,J) = dG%dyBu(I+ido,J+jdo)
     oG%areaBu(I,J) = dG%areaBu(I+ido,J+jdo)
     oG%CoriolisBu(I,J) = dG%CoriolisBu(I+ido,J+jdo)
+    oG%Coriolis2Bu(I,J) = dG%Coriolis2Bu(I+ido,J+jdo)
     oG%mask2dBu(I,J) = dG%mask2dBu(I+ido,J+jdo)
   enddo ; enddo
 
@@ -134,10 +135,11 @@ subroutine copy_dyngrid_to_MOM_grid(dG, oG, US)
   ! Copy various scalar variables and strings.
   oG%x_axis_units = dG%x_axis_units ; oG%y_axis_units = dG%y_axis_units
   oG%x_ax_unit_short = dG%x_ax_unit_short ; oG%y_ax_unit_short = dG%y_ax_unit_short
+  oG%grid_unit_to_L = dG%grid_unit_to_L
   oG%areaT_global = dG%areaT_global ; oG%IareaT_global = dG%IareaT_global
   oG%south_lat = dG%south_lat ; oG%west_lon  = dG%west_lon
   oG%len_lat = dG%len_lat ; oG%len_lon = dG%len_lon
-  oG%Rad_Earth = dG%Rad_Earth ; oG%Rad_Earth_L = dG%Rad_Earth_L
+  oG%Rad_Earth_L = dG%Rad_Earth_L
   oG%max_depth = dG%max_depth
 
 ! Update the halos in case the dynamic grid has smaller halos than the ocean grid.
@@ -165,6 +167,7 @@ subroutine copy_dyngrid_to_MOM_grid(dG, oG, US)
   call pass_var(oG%geoLatBu, oG%Domain, position=CORNER)
   call pass_vector(oG%dxBu, oG%dyBu, oG%Domain, To_All+Scalar_Pair, BGRID_NE)
   call pass_var(oG%CoriolisBu, oG%Domain, position=CORNER)
+  call pass_var(oG%Coriolis2Bu, oG%Domain, position=CORNER)
   call pass_var(oG%mask2dBu, oG%Domain, position=CORNER)
 
   if (oG%bathymetry_at_vel) then
@@ -263,6 +266,7 @@ subroutine copy_MOM_grid_to_dyngrid(oG, dG, US)
     dG%dyBu(I,J) = oG%dyBu(I+ido,J+jdo)
     dG%areaBu(I,J) = oG%areaBu(I+ido,J+jdo)
     dG%CoriolisBu(I,J) = oG%CoriolisBu(I+ido,J+jdo)
+    dG%Coriolis2Bu(I,J) = oG%Coriolis2Bu(I+ido,J+jdo)
     dG%mask2dBu(I,J) = oG%mask2dBu(I+ido,J+jdo)
   enddo ; enddo
 
@@ -293,10 +297,11 @@ subroutine copy_MOM_grid_to_dyngrid(oG, dG, US)
   ! Copy various scalar variables and strings.
   dG%x_axis_units = oG%x_axis_units ; dG%y_axis_units = oG%y_axis_units
   dG%x_ax_unit_short = oG%x_ax_unit_short ; dG%y_ax_unit_short = oG%y_ax_unit_short
+  dG%grid_unit_to_L = oG%grid_unit_to_L
   dG%areaT_global = oG%areaT_global ; dG%IareaT_global = oG%IareaT_global
   dG%south_lat = oG%south_lat ; dG%west_lon  = oG%west_lon
   dG%len_lat = oG%len_lat ; dG%len_lon = oG%len_lon
-  dG%Rad_Earth = oG%Rad_Earth ; dG%Rad_Earth_L = oG%Rad_Earth_L
+  dG%Rad_Earth_L = oG%Rad_Earth_L
   dG%max_depth = oG%max_depth
 
 ! Update the halos in case the dynamic grid has smaller halos than the ocean grid.
@@ -324,6 +329,7 @@ subroutine copy_MOM_grid_to_dyngrid(oG, dG, US)
   call pass_var(dG%geoLatBu, dG%Domain, position=CORNER)
   call pass_vector(dG%dxBu, dG%dyBu, dG%Domain, To_All+Scalar_Pair, BGRID_NE)
   call pass_var(dG%CoriolisBu, dG%Domain, position=CORNER)
+  call pass_var(dG%Coriolis2Bu, dG%Domain, position=CORNER)
   call pass_var(dG%mask2dBu, dG%Domain, position=CORNER)
 
   if (dG%bathymetry_at_vel) then

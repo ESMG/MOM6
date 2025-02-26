@@ -1031,11 +1031,11 @@ subroutine KPP_compute_BLD(CS, G, GV, US, h, Temp, Salt, u, v, tv, uStar, buoyFl
   call cpu_clock_begin(id_clock_KPP_compute_BLD)
 
   ! some constants
-  GoRho = US%Z_to_m*US%s_to_T**2 * (US%L_to_Z**2 * GV%g_Earth / GV%Rho0)
+  GoRho = US%Z_to_m*US%s_to_T**2 * (GV%g_Earth_Z_T2 / GV%Rho0)
   if (GV%Boussinesq) then
-    GoRho_Z_L2 = US%L_to_Z**2 * GV%Z_to_H * GV%g_Earth / GV%Rho0
+    GoRho_Z_L2 = GV%Z_to_H * GV%g_Earth_Z_T2 / GV%Rho0
   else
-    GoRho_Z_L2 = US%L_to_Z**2 * GV%g_Earth * GV%RZ_to_H
+    GoRho_Z_L2 = GV%g_Earth_Z_T2 * GV%RZ_to_H
   endif
   buoy_scale = US%L_to_m**2*US%s_to_T**3
 
@@ -1143,7 +1143,7 @@ subroutine KPP_compute_BLD(CS, G, GV, US, h, Temp, Salt, u, v, tv, uStar, buoyFl
           Vk =  Vk + (0.5*(Waves%Us_y(i,j,k)+Waves%Us_y(i,j-1,k)) - surfVs )
         endif
 
-        deltaU2(k) = US%L_T_to_m_s**2 * (Uk**2 + Vk**2)
+        deltaU2(k) = US%L_T_to_m_s**2 * ((Uk**2) + (Vk**2))
 
         ! pressure, temperature, and salinity for calling the equation of state
         ! kk+1 = surface fields
@@ -1191,7 +1191,7 @@ subroutine KPP_compute_BLD(CS, G, GV, US, h, Temp, Salt, u, v, tv, uStar, buoyFl
         if (GV%Boussinesq .or. GV%semi_Boussinesq) then
           deltaBuoy(k) = GoRho*(rho_1D(kk+2) - rho_1D(kk+1))
         else
-          deltaBuoy(k) = (US%Z_to_m*US%s_to_T**2) * (US%L_to_Z**2 * GV%g_Earth) * &
+          deltaBuoy(k) = (US%Z_to_m*US%s_to_T**2) * GV%g_Earth_Z_T2 * &
               ( (rho_1D(kk+2) - rho_1D(kk+1)) / (0.5 * (rho_1D(kk+2) + rho_1D(kk+1))) )
         endif
         N2_1d(k)    = (GoRho_Z_L2 * (rho_1D(kk+2) - rho_1D(kk+3)) ) / &
@@ -1296,7 +1296,7 @@ subroutine KPP_compute_BLD(CS, G, GV, US, h, Temp, Salt, u, v, tv, uStar, buoyFl
                     bfsfc=surfBuoyFlux, & ! surface buoyancy flux [m2 s-3]
                     uStar=surfFricVel,  & ! surface friction velocity [m s-1]
                     CVmix_kpp_params_user=CS%KPP_params ) ! KPP parameters
-        CS%Vt2(i,j,:) = US%m_to_Z*US%T_to_s * Vt2_1d(:)
+        CS%Vt2(i,j,:) = US%m_to_Z**2*US%T_to_s**2 * Vt2_1d(:)
       endif
 
       ! recompute wscale for diagnostics, now that we in fact know boundary layer depth

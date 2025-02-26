@@ -204,7 +204,7 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
                                             ! including [nondim] and [H ~> m or kg m-2].
   real :: uh_tmp(SZIB_(G),SZJ_(G),SZK_(GV)) ! A temporary zonal transport [H L2 T-1 ~> m3 s-1 or kg s-1]
   real :: vh_tmp(SZI_(G),SZJB_(G),SZK_(GV)) ! A temporary meridional transport [H L2 T-1 ~> m3 s-1 or kg s-1]
-  real :: mass_cell(SZI_(G),SZJ_(G))       ! The vertically integrated mass in a grid cell [kg]
+  real :: mass_cell(SZI_(G),SZJ_(G))       ! The vertically integrated mass in a grid cell [R Z L2 ~> kg]
   real :: rho_in_situ(SZI_(G))             ! In situ density [R ~> kg m-3]
   real :: cg1(SZI_(G),SZJ_(G))             ! First baroclinic gravity wave speed [L T-1 ~> m s-1]
   real :: Rd1(SZI_(G),SZJ_(G))             ! First baroclinic deformation radius [L ~> m]
@@ -226,7 +226,7 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
   real, dimension(SZK_(GV)) :: salt_layer_ave ! The average salinity in a layer [S ~> ppt]
   real :: thetaoga  ! The volume mean potential temperature [C ~> degC]
   real :: soga      ! The volume mean ocean salinity [S ~> ppt]
-  real :: masso     ! The total mass of the ocean [kg]
+  real :: masso     ! The total mass of the ocean [R Z L2 ~> kg]
   real :: tosga     ! The area mean sea surface temperature [C ~> degC]
   real :: sosga     ! The area mean sea surface salinity [S ~> ppt]
 
@@ -332,9 +332,9 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
   if (CS%id_masso > 0) then
     mass_cell(:,:) = 0.0
     do k=1,nz ; do j=js,je ; do i=is,ie
-      mass_cell(i,j) = mass_cell(i,j) + (GV%H_to_kg_m2*h(i,j,k)) * US%L_to_m**2*G%areaT(i,j)
+      mass_cell(i,j) = mass_cell(i,j) + (GV%H_to_RZ*h(i,j,k)) * G%areaT(i,j)
     enddo ; enddo ; enddo
-    masso = reproducing_sum(mass_cell)
+    masso = reproducing_sum(mass_cell, unscale=US%RZL2_to_kg)
     call post_data(CS%id_masso, masso, CS%diag)
   endif
 
@@ -679,13 +679,13 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
       do j=js,je ; do i=is,ie
         ! Blend the equatorial deformation radius with the standard one.
         f2_h = absurdly_small_freq2 + 0.25 * &
-            ((G%CoriolisBu(I,J)**2 + G%CoriolisBu(I-1,J-1)**2) + &
-             (G%CoriolisBu(I-1,J)**2 + G%CoriolisBu(I,J-1)**2))
+            ((G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I-1,J-1)) + &
+             (G%Coriolis2Bu(I-1,J) + G%Coriolis2Bu(I,J-1)))
         mag_beta = sqrt(0.5 * ( &
-            (((G%CoriolisBu(I,J)-G%CoriolisBu(I-1,J)) * G%IdxCv(i,J))**2 + &
-             ((G%CoriolisBu(I,J-1)-G%CoriolisBu(I-1,J-1)) * G%IdxCv(i,J-1))**2) + &
-            (((G%CoriolisBu(I,J)-G%CoriolisBu(I,J-1)) * G%IdyCu(I,j))**2 + &
-             ((G%CoriolisBu(I-1,J)-G%CoriolisBu(I-1,J-1)) * G%IdyCu(I-1,j))**2) ))
+            ((((G%CoriolisBu(I,J)-G%CoriolisBu(I-1,J)) * G%IdxCv(i,J))**2) + &
+             (((G%CoriolisBu(I,J-1)-G%CoriolisBu(I-1,J-1)) * G%IdxCv(i,J-1))**2)) + &
+            ((((G%CoriolisBu(I,J)-G%CoriolisBu(I,J-1)) * G%IdyCu(I,j))**2) + &
+             (((G%CoriolisBu(I-1,J)-G%CoriolisBu(I-1,J-1)) * G%IdyCu(I-1,j))**2)) ))
         Rd1(i,j) = cg1(i,j) / sqrt(f2_h + cg1(i,j) * mag_beta)
 
       enddo ; enddo
@@ -729,13 +729,13 @@ subroutine calculate_diagnostic_fields(u, v, h, uh, vh, tv, ADp, CDp, p_surf, &
       do j=js,je ; do i=is,ie
         ! Blend the equatorial deformation radius with the standard one.
         f2_h = absurdly_small_freq2 + 0.25 * &
-            ((G%CoriolisBu(I,J)**2 + G%CoriolisBu(I-1,J-1)**2) + &
-             (G%CoriolisBu(I-1,J)**2 + G%CoriolisBu(I,J-1)**2))
+            ((G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I-1,J-1)) + &
+             (G%Coriolis2Bu(I-1,J) + G%Coriolis2Bu(I,J-1)))
         mag_beta = sqrt(0.5 * ( &
-            (((G%CoriolisBu(I,J)-G%CoriolisBu(I-1,J)) * G%IdxCv(i,J))**2 + &
-             ((G%CoriolisBu(I,J-1)-G%CoriolisBu(I-1,J-1)) * G%IdxCv(i,J-1))**2) + &
-            (((G%CoriolisBu(I,J)-G%CoriolisBu(I,J-1)) * G%IdyCu(I,j))**2 + &
-             ((G%CoriolisBu(I-1,J)-G%CoriolisBu(I-1,J-1)) * G%IdyCu(I-1,j))**2) ))
+            ((((G%CoriolisBu(I,J)-G%CoriolisBu(I-1,J)) * G%IdxCv(i,J))**2) + &
+             (((G%CoriolisBu(I,J-1)-G%CoriolisBu(I-1,J-1)) * G%IdxCv(i,J-1))**2)) + &
+            ((((G%CoriolisBu(I,J)-G%CoriolisBu(I,J-1)) * G%IdyCu(I,j))**2) + &
+             (((G%CoriolisBu(I-1,J)-G%CoriolisBu(I-1,J-1)) * G%IdyCu(I-1,j))**2)) ))
         Rd1(i,j) = cg1(i,j) / sqrt(f2_h + cg1(i,j) * mag_beta)
 
       enddo ; enddo
@@ -973,8 +973,8 @@ subroutine calculate_energy_diagnostics(u, v, h, uh, vh, ADp, CDp, G, GV, US, CS
   KE_u(:,:) = 0. ; KE_v(:,:) = 0.
 
   do k=1,nz ; do j=js,je ; do i=is,ie
-    KE(i,j,k) = ((u(I,j,k) * u(I,j,k) + u(I-1,j,k) * u(I-1,j,k)) &
-               + (v(i,J,k) * v(i,J,k) + v(i,J-1,k) * v(i,J-1,k))) * 0.25
+    KE(i,j,k) = (((u(I,j,k) * u(I,j,k)) + (u(I-1,j,k) * u(I-1,j,k))) &
+               + ((v(i,J,k) * v(i,J,k)) + (v(i,J-1,k) * v(i,J-1,k)))) * 0.25
   enddo ; enddo ; enddo
   if (CS%id_KE > 0) call post_data(CS%id_KE, KE, CS%diag)
 
@@ -1299,8 +1299,8 @@ subroutine post_surface_dyn_diags(IDs, G, diag, sfc_state, ssh)
 
   if (IDs%id_speed > 0) then
     do j=js,je ; do i=is,ie
-      speed(i,j) = sqrt(0.5*(sfc_state%u(I-1,j)**2 + sfc_state%u(I,j)**2) + &
-                        0.5*(sfc_state%v(i,J-1)**2 + sfc_state%v(i,J)**2))
+      speed(i,j) = sqrt(0.5*((sfc_state%u(I-1,j)**2) + (sfc_state%u(I,j)**2)) + &
+                        0.5*((sfc_state%v(i,J-1)**2) + (sfc_state%v(i,J)**2)))
     enddo ; enddo
     call post_data(IDs%id_speed, speed, diag, mask=G%mask2dT)
   endif
@@ -1341,7 +1341,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     zos  ! dynamic sea lev (zero area mean) from inverse-barometer adjusted ssh [Z ~> m]
   real :: I_time_int    ! The inverse of the time interval [T-1 ~> s-1].
   real :: zos_area_mean ! Global area mean sea surface height [Z ~> m]
-  real :: volo          ! Total volume of the ocean [m3]
+  real :: volo          ! Total volume of the ocean [Z L2 ~> m3]
   real :: ssh_ga        ! Global ocean area weighted mean sea seaface height [Z ~> m]
   integer, dimension(2) :: EOSdom ! The i-computational domain for the equation of state
   integer :: i, j, is, ie, js, je
@@ -1375,7 +1375,7 @@ subroutine post_surface_thermo_diags(IDs, G, GV, US, diag, dt_int, sfc_state, tv
     do j=js,je ; do i=is,ie
       work_2d(i,j) = G%mask2dT(i,j) * (ssh(i,j) + G%bathyT(i,j))
     enddo ; enddo
-    volo = global_area_integral(work_2d, G, unscale=US%Z_to_m)
+    volo = global_area_integral(work_2d, G, tmp_scale=US%Z_to_m)
     call post_data(IDs%id_volo, volo, diag)
   endif
 
@@ -1574,7 +1574,7 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
   real :: wave_speed_tol      ! The fractional tolerance for finding the wave speeds [nondim]
   real :: convert_H           ! A conversion factor from internal thickness units to the appropriate
                               ! MKS units (m or kg m-2) for thicknesses depending on whether the
-                              ! Boussinesq approximation is being made [m H-1 or kg m-2 H-1 ~> 1]
+                              ! Boussinesq approximation is being made [m H-1 ~> 1] or [kg m-2 H-1 ~> 1]
   logical :: better_speed_est ! If true, use a more robust estimate of the first
                               ! mode wave speed as the starting point for iterations.
   logical :: split            ! True if using the barotropic-baroclinic split algorithm
@@ -1616,10 +1616,13 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
   call get_param(param_file, mdl, "INTERNAL_WAVE_SPEED_BETTER_EST", better_speed_est, &
                  "If true, use a more robust estimate of the first mode wave speed as the "//&
                  "starting point for iterations.", default=.true.)
+  call get_param(param_file, mdl, "REMAPPING_USE_OM4_SUBCELLS", om4_remap_via_sub_cells, &
+                 do_not_log=.true., default=.true.)
+
   call get_param(param_file, mdl, "INTWAVE_REMAPPING_USE_OM4_SUBCELLS", om4_remap_via_sub_cells, &
                  "If true, use the OM4 remapping-via-subcells algorithm for calculating EBT structure. "//&
                  "See REMAPPING_USE_OM4_SUBCELLS for details. "//&
-                 "We recommend setting this option to false.", default=.true.)
+                 "We recommend setting this option to false.", default=om4_remap_via_sub_cells)
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
                  default=99991231)
@@ -1641,8 +1644,9 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
       Time, 'Mass per unit area of liquid ocean grid cell', 'kg m-2', conversion=GV%H_to_kg_m2, &
       standard_name='sea_water_mass_per_unit_area', v_extensive=.true.)
 
-  CS%id_masso = register_scalar_field('ocean_model', 'masso', Time, &
-      diag, 'Mass of liquid ocean', 'kg', standard_name='sea_water_mass')
+  CS%id_masso = register_scalar_field('ocean_model', 'masso', Time, diag, &
+      'Mass of liquid ocean', units='kg', conversion=US%RZL2_to_kg, &
+      standard_name='sea_water_mass')
 
   CS%id_thkcello = register_diag_field('ocean_model', 'thkcello', diag%axesTL, Time, &
       long_name='Cell Thickness', standard_name='cell_thickness', &
@@ -1859,7 +1863,7 @@ subroutine MOM_diagnostics_init(MIS, ADp, CDp, Time, G, GV, US, param_file, diag
   if ((CS%id_cg1>0) .or. (CS%id_Rd1>0) .or. (CS%id_cfl_cg1>0) .or. &
       (CS%id_cfl_cg1_x>0) .or. (CS%id_cfl_cg1_y>0) .or. &
       (CS%id_cg_ebt>0) .or. (CS%id_Rd_ebt>0) .or. (CS%id_p_ebt>0)) then
-    call wave_speed_init(CS%wave_speed, remap_answer_date=remap_answer_date, &
+    call wave_speed_init(CS%wave_speed, GV, remap_answer_date=remap_answer_date, &
                          better_speed_est=better_speed_est, min_speed=wave_speed_min, &
                          wave_speed_tol=wave_speed_tol, om4_remap_via_sub_cells=om4_remap_via_sub_cells)
   endif
@@ -1910,7 +1914,7 @@ subroutine register_surface_diags(Time, G, US, IDs, diag, tv)
 
   ! Vertically integrated, budget, and surface state diagnostics
   IDs%id_volo = register_scalar_field('ocean_model', 'volo', Time, diag, &
-      long_name='Total volume of liquid ocean', units='m3', &
+      long_name='Total volume of liquid ocean', units='m3', conversion=US%Z_to_m*US%L_to_m**2, &
       standard_name='sea_water_volume')
   IDs%id_zos = register_diag_field('ocean_model', 'zos', diag%axesT1, Time, &
       standard_name = 'sea_surface_height_above_geoid', &

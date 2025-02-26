@@ -14,7 +14,6 @@ use MOM_diabatic_aux,        only : diabatic_aux_init, diabatic_aux_end, diabati
 use MOM_diabatic_aux,        only : make_frazil, adjust_salt, differential_diffuse_T_S, triDiagTS
 use MOM_diabatic_aux,        only : triDiagTS_Eulerian, find_uv_at_h
 use MOM_diabatic_aux,        only : applyBoundaryFluxesInOut, set_pen_shortwave
-use MOM_diabatic_aux,        only : diagnoseMLDbyDensityDifference, diagnoseMLDbyEnergy
 use MOM_diag_mediator,       only : post_data, register_diag_field, safe_alloc_ptr
 use MOM_diag_mediator,       only : post_product_sum_u, post_product_sum_v
 use MOM_diag_mediator,       only : diag_ctrl, time_type, diag_update_remap_grids
@@ -22,6 +21,7 @@ use MOM_diag_mediator,       only : diag_ctrl, query_averaging_enabled, enable_a
 use MOM_diag_mediator,       only : diag_grid_storage, diag_grid_storage_init, diag_grid_storage_end
 use MOM_diag_mediator,       only : diag_copy_diag_to_storage, diag_copy_storage_to_diag
 use MOM_diag_mediator,       only : diag_save_grids, diag_restore_grids
+use MOM_diagnose_mld,        only : diagnoseMLDbyDensityDifference, diagnoseMLDbyEnergy
 use MOM_diapyc_energy_req,   only : diapyc_energy_req_init, diapyc_energy_req_end
 use MOM_diapyc_energy_req,   only : diapyc_energy_req_calc, diapyc_energy_req_test, diapyc_energy_req_CS
 use MOM_CVMix_conv,          only : CVMix_conv_init, CVMix_conv_cs
@@ -149,7 +149,7 @@ type, public :: diabatic_CS ; private
                                      !! diffusivity of Kd_min_tr (see below) were operating.
   real    :: Kd_BBL_tr               !< A bottom boundary layer tracer diffusivity that
                                      !! will allow for explicitly specified bottom fluxes
-                                     !! [H2 T-1 ~> m2 s-1 or kg2 m-4 s-2].  The entrainment at the
+                                     !! [H2 T-1 ~> m2 s-1 or kg2 m-4 s-1].  The entrainment at the
                                      !! bottom is at least sqrt(Kd_BBL_tr*dt) over the same distance.
   real    :: Kd_min_tr               !< A minimal diffusivity that should always be
                                      !! applied to tracers, especially in massless layers
@@ -175,6 +175,8 @@ type, public :: diabatic_CS ; private
   real    :: dz_subML_N2             !< The distance over which to calculate a diagnostic of the
                                      !! average stratification at the base of the mixed layer [Z ~> m].
   real    :: MLD_En_vals(3)          !< Energy values for energy mixed layer diagnostics [R Z3 T-2 ~> J m-2]
+  real    :: ref_h_mld = 0.0         !< The depth of the "surface"  density used in a difference mixed based
+                                     !! MLD calculation [Z ~> m].
 
   !>@{ Diagnostic IDs
   integer :: id_ea       = -1, id_eb       = -1 ! used by layer diabatic
@@ -183,6 +185,7 @@ type, public :: diabatic_CS ; private
   integer :: id_Tdif     = -1, id_Sdif     = -1, id_Tadv   = -1, id_Sadv     = -1
   ! These are handles to diagnostics related to the mixed layer properties.
   integer :: id_MLD_003 = -1, id_MLD_0125 = -1, id_MLD_user = -1, id_mlotstsq = -1
+  integer :: id_MLD_003_zr = -1, id_MLD_003_rr = -1
   integer :: id_MLD_EN1 = -1, id_MLD_EN2  = -1, id_MLD_EN3  = -1, id_subMLN2  = -1
 
   ! These are handles to diagnostics that are only available in non-ALE layered mode.
@@ -479,13 +482,16 @@ subroutine diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, &
   call enable_averages(dt, Time_end, CS%diag)
   if (CS%id_MLD_003 > 0 .or. CS%id_subMLN2 > 0 .or. CS%id_mlotstsq > 0) then
     call diagnoseMLDbyDensityDifference(CS%id_MLD_003, h, tv, 0.03*US%kg_m3_to_R, G, GV, US, CS%diag, &
+                                        CS%ref_h_mld, CS%id_MLD_003_zr, CS%id_MLD_003_rr, &
                                         id_N2subML=CS%id_subMLN2, id_MLDsq=CS%id_mlotstsq, dz_subML=CS%dz_subML_N2)
   endif
   if (CS%id_MLD_0125 > 0) then
-    call diagnoseMLDbyDensityDifference(CS%id_MLD_0125, h, tv, 0.125*US%kg_m3_to_R, G, GV, US, CS%diag)
+    call diagnoseMLDbyDensityDifference(CS%id_MLD_0125, h, tv, 0.125*US%kg_m3_to_R, G, GV, US, CS%diag, &
+                                        ref_H_MLD=0.0, id_ref_z=-1, id_ref_rho=-1)
   endif
   if (CS%id_MLD_user > 0) then
-    call diagnoseMLDbyDensityDifference(CS%id_MLD_user, h, tv, CS%MLDdensityDifference, G, GV, US, CS%diag)
+    call diagnoseMLDbyDensityDifference(CS%id_MLD_user, h, tv, CS%MLDdensityDifference, G, GV, US, CS%diag, &
+                                        ref_H_MLD=0.0, id_ref_z=-1, id_ref_rho=-1)
   endif
   if ((CS%id_MLD_EN1 > 0) .or. (CS%id_MLD_EN2 > 0) .or. (CS%id_MLD_EN3 > 0)) then
     call diagnoseMLDbyEnergy((/CS%id_MLD_EN1, CS%id_MLD_EN2, CS%id_MLD_EN3/),&
@@ -676,6 +682,14 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     call cpu_clock_begin(id_clock_kpp)
     ! total vertical viscosity in the interior is represented via visc%Kv_shear
 
+    ! NOTE: The following do not require initialization, but their checksums do
+    !   require initialization, and past versions were initialized to zero.
+    KPP_NLTheat(:,:,:) = 0.
+    KPP_NLTscalar(:,:,:) = 0.
+    KPP_buoy_flux(:,:,:) = 0.
+    KPP_temp_flux(:,:) = 0.
+    KPP_salt_flux(:,:) = 0.
+
     ! KPP needs the surface buoyancy flux but does not update state variables.
     ! We could make this call higher up to avoid a repeat unpacking of the surface fluxes.
     ! Sets: KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux
@@ -844,7 +858,7 @@ subroutine diabatic_ALE_legacy(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Tim
     endif
 
     call find_uv_at_h(u, v, h, u_h, v_h, G, GV, US)
-    call energetic_PBL(h, u_h, v_h, tv, fluxes, dt, Kd_ePBL, G, GV, US, &
+    call energetic_PBL(h, u_h, v_h, tv, fluxes, visc, dt, Kd_ePBL, G, GV, US, &
                        CS%ePBL, stoch_CS, dSV_dT, dSV_dS, cTKE, SkinBuoyFlux, waves=waves)
 
     call energetic_PBL_get_MLD(CS%ePBL, BLD(:,:), G, US)
@@ -1285,6 +1299,14 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
       visc%Kv_shear(i,j,k) = visc%Kv_shear(i,j,k) + visc%Kv_slow(i,j,k)
     enddo ; enddo ; enddo
 
+    ! NOTE: The following do not require initialization, but their checksums do
+    !   require initialization, and past versions were initialized to zero.
+    KPP_NLTheat(:,:,:) = 0.
+    KPP_NLTscalar(:,:,:) = 0.
+    KPP_buoy_flux(:,:,:) = 0.
+    KPP_temp_flux(:,:) = 0.
+    KPP_salt_flux(:,:) = 0.
+
     ! KPP needs the surface buoyancy flux but does not update state variables.
     ! We could make this call higher up to avoid a repeat unpacking of the surface fluxes.
     ! Sets: KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux
@@ -1388,7 +1410,7 @@ subroutine diabatic_ALE(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_end, 
     endif
 
     call find_uv_at_h(u, v, h, u_h, v_h, G, GV, US)
-    call energetic_PBL(h, u_h, v_h, tv, fluxes, dt, Kd_ePBL, G, GV, US, &
+    call energetic_PBL(h, u_h, v_h, tv, fluxes, visc, dt, Kd_ePBL, G, GV, US, &
                        CS%ePBL, stoch_CS, dSV_dT, dSV_dS, cTKE, SkinBuoyFlux, waves=waves)
 
     call energetic_PBL_get_MLD(CS%ePBL, BLD(:,:), G, US)
@@ -1890,6 +1912,15 @@ subroutine layered_diabatic(u, v, h, tv, BLD, fluxes, visc, ADp, CDp, dt, Time_e
 
   if (CS%useKPP) then
     call cpu_clock_begin(id_clock_kpp)
+
+    ! NOTE: The following do not require initialization, but their checksums do
+    !   require initialization, and past versions were initialized to zero.
+    KPP_NLTheat(:,:,:) = 0.
+    KPP_NLTscalar(:,:,:) = 0.
+    KPP_buoy_flux(:,:,:) = 0.
+    KPP_temp_flux(:,:) = 0.
+    KPP_salt_flux(:,:) = 0.
+
     ! KPP needs the surface buoyancy flux but does not update state variables.
     ! We could make this call higher up to avoid a repeat unpacking of the surface fluxes.
     ! Sets: KPP_buoy_flux, KPP_temp_flux, KPP_salt_flux
@@ -3225,13 +3256,8 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
         'Mixed layer depth (delta rho = 0.125)', 'm', conversion=US%Z_to_m)
     call get_param(param_file, mdl, "MLD_EN_VALS", CS%MLD_En_vals, &
          "The energy values used to compute MLDs.  If not set (or all set to 0.), the "//&
-         "default will overwrite to 25., 2500., 250000.", &
-         units='J/m2', default=0., scale=US%W_m2_to_RZ3_T3*US%s_to_T)
-    if ((CS%MLD_En_vals(1)==0.).and.(CS%MLD_En_vals(2)==0.).and.(CS%MLD_En_vals(3)==0.)) then
-      CS%MLD_En_vals = (/ 25.*US%W_m2_to_RZ3_T3*US%s_to_T, &
-                        2500.*US%W_m2_to_RZ3_T3*US%s_to_T, &
-                      250000.*US%W_m2_to_RZ3_T3*US%s_to_T /)
-    endif
+         "default will overwrite to 25., 2500., 250000.", units='J/m2', &
+         defaults=(/25., 2500., 250000./), scale=US%W_m2_to_RZ3_T3*US%s_to_T)
     write(EN1,'(F10.2)') CS%MLD_En_vals(1)*US%RZ3_T3_to_W_m2*US%T_to_s
     write(EN2,'(F10.2)') CS%MLD_En_vals(2)*US%RZ3_T3_to_W_m2*US%T_to_s
     write(EN3,'(F10.2)') CS%MLD_En_vals(3)*US%RZ3_T3_to_W_m2*US%T_to_s
@@ -3248,6 +3274,15 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
         'Squared buoyancy frequency below mixed layer', units='s-2', conversion=US%s_to_T**2)
     CS%id_MLD_user = register_diag_field('ocean_model', 'MLD_user', diag%axesT1, Time, &
         'Mixed layer depth (used defined)', units='m', conversion=US%Z_to_m)
+    if (CS%id_MLD_003 > 0) then
+      call get_param(param_file, mdl, "HREF_FOR_MLD", CS%ref_h_mld, &
+           "Reference depth used to calculate the potential density used to find the mixed layer depth "//&
+           "based on a delta rho = 0.03 kg/m3.", units='m', default=0.0, scale=US%m_to_Z)
+      CS%id_MLD_003_zr = register_diag_field('ocean_model', 'MLD_003_refZ', diag%axesT1, Time, &
+           'Depth of reference density for MLD (delta rho = 0.03)', units='m', conversion=US%Z_to_m)
+      CS%id_MLD_003_rr = register_diag_field('ocean_model', 'MLD_003_refRho', diag%axesT1, Time, &
+           'Reference density for MLD (delta rho = 0.03)', units='kg/m3', conversion=US%R_to_kg_m3)
+    endif
   endif
   call get_param(param_file, mdl, "DIAG_MLD_DENSITY_DIFF", CS%MLDdensityDifference, &
                  "The density difference used to determine a diagnostic mixed "//&
@@ -3548,8 +3583,9 @@ subroutine diabatic_driver_init(Time, G, GV, US, param_file, useALEalgorithm, di
 end subroutine diabatic_driver_init
 
 !> Routine to register restarts, pass-through to children modules
-subroutine register_diabatic_restarts(G, US, param_file, int_tide_CSp, restart_CSp)
+subroutine register_diabatic_restarts(G, GV, US, param_file, int_tide_CSp, restart_CSp)
   type(ocean_grid_type), intent(in)    :: G           !< The ocean's grid structure
+  type(verticalGrid_type), intent(in)  :: GV          !< The ocean's vertical grid structure
   type(unit_scale_type), intent(in)    :: US          !< A dimensional unit scaling type
   type(param_file_type), intent(in)    :: param_file  !< A structure to parse for run-time parameters
   type(int_tide_CS),     pointer       :: int_tide_CSp !< Internal tide control structure
@@ -3562,7 +3598,7 @@ subroutine register_diabatic_restarts(G, US, param_file, int_tide_CSp, restart_C
   call read_param(param_file, "INTERNAL_TIDES", use_int_tides)
 
   if (use_int_tides) then
-    call register_int_tide_restarts(G, US, param_file, int_tide_CSp, restart_CSp)
+    call register_int_tide_restarts(G, GV, US, param_file, int_tide_CSp, restart_CSp)
   endif
 
 end subroutine register_diabatic_restarts

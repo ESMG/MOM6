@@ -82,7 +82,7 @@ subroutine Neverworld_initialize_topography(D, G, param_file, max_depth)
 
 end subroutine Neverworld_initialize_topography
 
-!> Returns the value of a cosine-bell function evaluated at x/L
+!> Returns the value of a cosine-bell function evaluated at x/L [nondim]
 real function cosbell(x, L)
   real , intent(in) :: x       !< Position in arbitrary units [A]
   real , intent(in) :: L       !< Width in arbitrary units [A]
@@ -92,7 +92,7 @@ real function cosbell(x, L)
   cosbell = 0.5 * (1 + cos(PI*MIN(ABS(x/L),1.0)))
 end function cosbell
 
-!> Returns the value of a sin-spike function evaluated at x/L
+!> Returns the value of a sin-spike function evaluated at x/L [nondim]
 real function spike(x, L)
 
   real , intent(in) :: x       !< Position in arbitrary units [A]
@@ -104,7 +104,7 @@ real function spike(x, L)
 end function spike
 
 !> Returns the value of a triangular function centered at x=x0 with value 1
-!! and linearly decreasing to 0 at x=x0+/-L, and 0 otherwise.
+!! and linearly decreasing to 0 at x=x0+/-L, and 0 otherwise [nondim].
 !! If clip is present the top of the cone is cut off at "clip", which
 !! effectively defaults to 1.
 real function cone(x, x0, L, clip)
@@ -117,7 +117,7 @@ real function cone(x, x0, L, clip)
   if (present(clip)) cone = min(clip, cone)
 end function cone
 
-!> Returns an s-curve s(x) s.t. s(x0)<=0, s(x0+L)>=1 and cubic in between.
+!> Returns an s-curve s(x) s.t. s(x0)<=0, s(x0+L)>=1 and cubic in between [nondim].
 real function scurve(x, x0, L)
   real, intent(in) :: x       !< Coordinate in arbitrary units [A]
   real, intent(in) :: x0      !< position of peak in arbitrary units [A]
@@ -130,7 +130,7 @@ end function scurve
 
 ! None of the following 7 functions appear to be used.
 
-!> Returns a "coastal" profile.
+!> Returns a "coastal" profile [nondim].
 real function cstprof(x, x0, L, lf, bf, sf, sh)
   real, intent(in) :: x       !< Coordinate in arbitrary units [A]
   real, intent(in) :: x0      !< position of peak in arbitrary units [A]
@@ -145,7 +145,7 @@ real function cstprof(x, x0, L, lf, bf, sf, sh)
   cstprof = sh * scurve(s-lf,0.,bf) + (1.-sh) * scurve(s - (1.-sf),0.,sf)
 end function cstprof
 
-!> Distance between points x,y and a line segment (x0,y0) and (x0,y1).
+!> Distance between points x,y and a line segment (x0,y0) and (x0,y1) in arbitrary units [A].
 real function dist_line_fixed_x(x, y, x0, y0, y1)
   real, intent(in) :: x       !< X-coordinate in arbitrary units [A]
   real, intent(in) :: y       !< Y-coordinate in arbitrary units [A]
@@ -157,10 +157,10 @@ real function dist_line_fixed_x(x, y, x0, y0, y1)
   dx = x - x0
   yr = min( max(y0,y1), max( min(y0,y1), y ) ) ! bound y by y0,y1
   dy = y - yr ! =0 within y0<y<y1, =y0-y for y<y0, =y-y1 for y>y1
-  dist_line_fixed_x = sqrt( dx*dx + dy*dy )
+  dist_line_fixed_x = sqrt( (dx*dx) + (dy*dy) )
 end function dist_line_fixed_x
 
-!> Distance between points x,y and a line segment (x0,y0) and (x1,y0).
+!> Distance between points x,y and a line segment (x0,y0) and (x1,y0) in arbitrary units [A].
 real function dist_line_fixed_y(x, y, x0, x1, y0)
   real, intent(in) :: x       !< X-coordinate in arbitrary units [A]
   real, intent(in) :: y       !< Y-coordinate in arbitrary units [A]
@@ -171,7 +171,7 @@ real function dist_line_fixed_y(x, y, x0, x1, y0)
   dist_line_fixed_y = dist_line_fixed_x(y, x, y0, x0, x1)
 end function dist_line_fixed_y
 
-!> A "coast profile" applied in an N-S line from lon0,lat0 to lon0,lat1.
+!> A "coast profile" applied in an N-S line from lon0,lat0 to lon0,lat1 [nondim].
 real function NS_coast(lon, lat, lon0, lat0, lat1, dlon, sh)
   real, intent(in) :: lon     !< Longitude [degrees_E]
   real, intent(in) :: lat     !< Latitude [degrees_N]
@@ -186,7 +186,7 @@ real function NS_coast(lon, lat, lon0, lat0, lat1, dlon, sh)
   NS_coast = cstprof(r, 0., dlon, 0.125, 0.125, 0.5, sh)
 end function NS_coast
 
-!> A "coast profile" applied in an E-W line from lon0,lat0 to lon1,lat0.
+!> A "coast profile" applied in an E-W line from lon0,lat0 to lon1,lat0 [nondim].
 real function EW_coast(lon, lat, lon0, lon1, lat0, dlat, sh)
   real, intent(in) :: lon     !< Longitude [degrees_E]
   real, intent(in) :: lat     !< Latitude [degrees_N]
@@ -201,7 +201,7 @@ real function EW_coast(lon, lat, lon0, lon1, lat0, dlat, sh)
   EW_coast = cstprof(r, 0., dlat, 0.125, 0.125, 0.5, sh)
 end function EW_coast
 
-!> A NS ridge
+!> A NS ridge [nondim]
 real function NS_ridge(lon, lat, lon0, lat0, lat1, dlon, rh)
   real, intent(in) :: lon     !< Longitude [degrees_E]
   real, intent(in) :: lat     !< Latitude [degrees_N]
@@ -217,7 +217,7 @@ real function NS_ridge(lon, lat, lon0, lat0, lat1, dlon, rh)
 end function NS_ridge
 
 
-!> A circular ridge
+!> A circular ridge [nondim]
 real function circ_ridge(lon, lat, lon0, lat0, ring_radius, ring_thickness, ridge_height)
   real, intent(in) :: lon            !< Longitude [degrees_E]
   real, intent(in) :: lat            !< Latitude [degrees_N]
@@ -229,7 +229,7 @@ real function circ_ridge(lon, lat, lon0, lat0, ring_radius, ring_thickness, ridg
   real :: r ! A relative position [degrees]
   real :: frac_ht ! The fractional height of the topography [nondim]
 
-  r = sqrt( (lon - lon0)**2 + (lat - lat0)**2 ) ! Pseudo-distance from a point
+  r = sqrt( ((lon - lon0)**2) + ((lat - lat0)**2) ) ! Pseudo-distance from a point
   r = abs( r - ring_radius) ! Pseudo-distance from a circle
   frac_ht = cone(r, 0., ring_thickness, ridge_height) ! 0 .. frac_ridge_height
   circ_ridge = 1. - frac_ht ! Fractional depths (1-frac_ridge_height) .. 1
@@ -292,8 +292,8 @@ subroutine Neverworld_initialize_thickness(h, depth_tot, G, GV, US, param_file, 
       h(i,j,k) = e0(k) - e_interface ! Nominal thickness
       x = (G%geoLonT(i,j)-G%west_lon)/G%len_lon
       y = (G%geoLatT(i,j)-G%south_lat)/G%len_lat
-      r1 = sqrt((x-0.7)**2+(y-0.2)**2)
-      r2 = sqrt((x-0.3)**2+(y-0.25)**2)
+      r1 = sqrt(((x-0.7)**2) + ((y-0.2)**2))
+      r2 = sqrt(((x-0.3)**2) + ((y-0.25)**2))
       h(i,j,k) = h(i,j,k) + pert_amp * (e0(k) - e0(nz+1)) * &
                             (spike(r1,0.15)-spike(r2,0.15)) ! Prescribed perturbation
       if (h_noise /= 0.) then

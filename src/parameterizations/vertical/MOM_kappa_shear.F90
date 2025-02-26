@@ -97,6 +97,8 @@ type, public :: Kappa_shear_CS ; private
                              !! time average TKE when there is mass in all layers.  Otherwise always
                              !! report the time-averaged TKE, as is currently done when there
                              !! are some massless layers.
+  logical :: VS_viscosity_bug !< If true, use a bug in the calculation of the viscosity that sets
+                             !! it to zero for all vertices that are on a coastline.
   logical :: restrictive_tolerance_check !< If false, uses the less restrictive tolerance check to
                              !! determine if a timestep is acceptable for the KS_it outer iteration
                              !! loop, as the code was originally written.  True uses the more
@@ -283,8 +285,8 @@ subroutine Calculate_kappa_shear(u_in, v_in, h, tv, p_surf, kappa_io, tke_io, &
         do k=1,nzc+1 ; kc(k) = k ; kf(k) = 0.0 ; enddo
       endif
 
-      f2 = 0.25 * ((G%CoriolisBu(I,j)**2 + G%CoriolisBu(I-1,J-1)**2) + &
-                   (G%CoriolisBu(I,J-1)**2 + G%CoriolisBu(I-1,J)**2))
+      f2 = 0.25 * ((G%Coriolis2Bu(I,J) + G%Coriolis2Bu(I-1,J-1)) + &
+                   (G%Coriolis2Bu(I,J-1) + G%Coriolis2Bu(I-1,J)))
       surface_pres = 0.0 ; if (associated(p_surf)) surface_pres = p_surf(i,j)
 
     ! ----------------------------------------------------    I_Ld2_1d, dz_Int_1d
@@ -446,26 +448,26 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
 
     ! Interpolate the various quantities to the corners, using masks.
     do k=1,nz ; do I=IsB,IeB
-      u_2d(I,k) = (u_in(I,j,k)   * (G%mask2dCu(I,j)   * (h(i,j,k)   + h(i+1,j,k))) + &
-                   u_in(I,j+1,k) * (G%mask2dCu(I,j+1) * (h(i,j+1,k) + h(i+1,j+1,k))) ) / &
+      u_2d(I,k) = (G%mask2dCu(I,j)   * (u_in(I,j,k)   * (h(i,j,k)   + h(i+1,j,k))) + &
+                   G%mask2dCu(I,j+1) * (u_in(I,j+1,k) * (h(i,j+1,k) + h(i+1,j+1,k))) ) / &
                   ((G%mask2dCu(I,j)   * (h(i,j,k)   + h(i+1,j,k)) + &
                     G%mask2dCu(I,j+1) * (h(i,j+1,k) + h(i+1,j+1,k))) + GV%H_subroundoff)
-      v_2d(I,k) = (v_in(i,J,k)   * (G%mask2dCv(i,J)   * (h(i,j,k)   + h(i,j+1,k))) + &
-                   v_in(i+1,J,k) * (G%mask2dCv(i+1,J) * (h(i+1,j,k) + h(i+1,j+1,k))) ) / &
+      v_2d(I,k) = (G%mask2dCv(i,J)   * (v_in(i,J,k)   * (h(i,j,k)   + h(i,j+1,k))) + &
+                   G%mask2dCv(i+1,J) * (v_in(i+1,J,k) * (h(i+1,j,k) + h(i+1,j+1,k))) ) / &
                   ((G%mask2dCv(i,J)   * (h(i,j,k)   + h(i,j+1,k)) + &
                     G%mask2dCv(i+1,J) * (h(i+1,j,k) + h(i+1,j+1,k))) + GV%H_subroundoff)
       I_hwt = 1.0 / (((G%mask2dT(i,j) * h(i,j,k) + G%mask2dT(i+1,j+1) * h(i+1,j+1,k)) + &
                       (G%mask2dT(i+1,j) * h(i+1,j,k) + G%mask2dT(i,j+1) * h(i,j+1,k))) + &
                      GV%H_subroundoff)
       if (use_temperature) then
-        T_2d(I,k) = ( ((G%mask2dT(i,j) * h(i,j,k)) * T_in(i,j,k) + &
-                       (G%mask2dT(i+1,j+1) * h(i+1,j+1,k)) * T_in(i+1,j+1,k)) + &
-                      ((G%mask2dT(i+1,j) * h(i+1,j,k)) * T_in(i+1,j,k) + &
-                       (G%mask2dT(i,j+1) * h(i,j+1,k)) * T_in(i,j+1,k)) ) * I_hwt
-        S_2d(I,k) = ( ((G%mask2dT(i,j) * h(i,j,k)) * S_in(i,j,k) + &
-                       (G%mask2dT(i+1,j+1) * h(i+1,j+1,k)) * S_in(i+1,j+1,k)) + &
-                      ((G%mask2dT(i+1,j) * h(i+1,j,k)) * S_in(i+1,j,k) + &
-                       (G%mask2dT(i,j+1) * h(i,j+1,k)) * S_in(i,j+1,k)) ) * I_hwt
+        T_2d(I,k) = ( (G%mask2dT(i,j) * (h(i,j,k) * T_in(i,j,k)) + &
+                       G%mask2dT(i+1,j+1) * (h(i+1,j+1,k) * T_in(i+1,j+1,k))) + &
+                      (G%mask2dT(i+1,j) * (h(i+1,j,k) * T_in(i+1,j,k)) + &
+                       G%mask2dT(i,j+1) * (h(i,j+1,k) * T_in(i,j+1,k))) ) * I_hwt
+        S_2d(I,k) = ( (G%mask2dT(i,j) * (h(i,j,k) * S_in(i,j,k)) + &
+                       G%mask2dT(i+1,j+1) * (h(i+1,j+1,k) * S_in(i+1,j+1,k))) + &
+                      (G%mask2dT(i+1,j) * (h(i+1,j,k) * S_in(i+1,j,k)) + &
+                       G%mask2dT(i,j+1) * (h(i,j+1,k) * S_in(i,j+1,k))) ) * I_hwt
       endif
       h_2d(I,k) = ((G%mask2dT(i,j) * h(i,j,k) + G%mask2dT(i+1,j+1) * h(i+1,j+1,k)) + &
                    (G%mask2dT(i+1,j) * h(i+1,j,k) + G%mask2dT(i,j+1) * h(i,j+1,k)) ) / &
@@ -476,8 +478,8 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
                    ((G%mask2dT(i,j) + G%mask2dT(i+1,j+1)) + &
                     (G%mask2dT(i+1,j) + G%mask2dT(i,j+1)) + 1.0e-36 )
 !      h_2d(I,k) = 0.25*((h(i,j,k) + h(i+1,j+1,k)) + (h(i+1,j,k) + h(i,j+1,k)))
-!      h_2d(I,k) = ((h(i,j,k)**2 + h(i+1,j+1,k)**2) + &
-!                   (h(i+1,j,k)**2 + h(i,j+1,k)**2)) * I_hwt
+!      h_2d(I,k) = (((h(i,j,k)**2) + (h(i+1,j+1,k)**2)) + &
+!                   ((h(i+1,j,k)**2) + (h(i,j+1,k)**2))) * I_hwt
     enddo ; enddo
     if (.not.use_temperature) then ; do k=1,nz ; do I=IsB,IeB
       rho_2d(I,k) = GV%Rlay(k)
@@ -555,7 +557,7 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
         do k=1,nzc+1 ; kc(k) = k ; kf(k) = 0.0 ; enddo
       endif
 
-      f2 = G%CoriolisBu(I,J)**2
+      f2 = G%Coriolis2Bu(I,J)
       surface_pres = 0.0
       if (associated(p_surf)) then
         if (CS%psurf_bug) then
@@ -607,10 +609,17 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
       enddo
     endif ; enddo ! i-loop
 
-    do K=1,nz+1 ; do I=IsB,IeB
-      tke_io(I,J,K) = G%mask2dBu(I,J) * tke_2d(I,K)
-      kv_io(I,J,K) = ( G%mask2dBu(I,J) * kappa_2d(I,K,J2) ) * CS%Prandtl_turb
-    enddo ; enddo
+    if (CS%VS_viscosity_bug) then
+      do K=1,nz+1 ; do I=IsB,IeB
+        tke_io(I,J,K) = G%mask2dBu(I,J) * tke_2d(I,K)
+        kv_io(I,J,K) = ( G%mask2dBu(I,J) * kappa_2d(I,K,J2) ) * CS%Prandtl_turb
+      enddo; enddo
+    else
+      do K=1,nz+1 ; do I=IsB,IeB
+        tke_io(I,J,K) = tke_2d(I,K)
+        kv_io(I,J,K) = kappa_2d(I,K,J2) * CS%Prandtl_turb
+      enddo; enddo
+    endif
     if (J>=G%jsc) then ; do K=1,nz+1 ; do i=G%isc,G%iec
       ! Set the diffusivities in tracer columns from the values at vertices.
       kappa_io(i,j,K) = G%mask2dT(i,j) * 0.25 * &
@@ -766,7 +775,7 @@ subroutine kappa_shear_column(kappa, tke, dt, nzc, f2, surface_pres, hlay, dz_la
 
   Ri_crit = CS%Rino_crit
   gR0 = GV%H_to_RZ * GV%g_Earth
-  g_R0 = (US%L_to_Z**2 * GV%g_Earth) / GV%Rho0
+  g_R0 = GV%g_Earth_Z_T2 / GV%Rho0
   k0dt = dt*CS%kappa_0
 
   I_lz_rescale_sqr = 1.0; if (CS%lz_rescale > 0) I_lz_rescale_sqr = 1/(CS%lz_rescale*CS%lz_rescale)
@@ -901,19 +910,19 @@ subroutine kappa_shear_column(kappa, tke, dt, nzc, f2, surface_pres, hlay, dz_la
                                     tv%eqn_of_state, (/2,nzc/) )
       call calculate_density(T_int, Sal_int, pressure, rho_int, tv%eqn_of_state, (/2,nzc/) )
       do K=2,nzc
-        dbuoy_dT(K) = (US%L_to_Z**2 * GV%g_Earth) * (rho_int(K) * dSpV_dT(K))
-        dbuoy_dS(K) = (US%L_to_Z**2 * GV%g_Earth) * (rho_int(K) * dSpV_dS(K))
+        dbuoy_dT(K) = GV%g_Earth_Z_T2 * (rho_int(K) * dSpV_dT(K))
+        dbuoy_dS(K) = GV%g_Earth_Z_T2 * (rho_int(K) * dSpV_dS(K))
       enddo
     endif
   elseif (GV%Boussinesq .or. GV%semi_Boussinesq) then
     do K=1,nzc+1 ; dbuoy_dT(K) = -g_R0 ; dbuoy_dS(K) = 0.0 ; enddo
   else
     do K=1,nzc+1 ; dbuoy_dS(K) = 0.0 ; enddo
-    dbuoy_dT(1) = -(US%L_to_Z**2 * GV%g_Earth) / GV%Rlay(1)
+    dbuoy_dT(1) = -GV%g_Earth_Z_T2 / GV%Rlay(1)
     do K=2,nzc
-      dbuoy_dT(K) = -(US%L_to_Z**2 * GV%g_Earth) / (0.5*(GV%Rlay(k-1) + GV%Rlay(k)))
+      dbuoy_dT(K) = -GV%g_Earth_Z_T2 / (0.5*(GV%Rlay(k-1) + GV%Rlay(k)))
     enddo
-    dbuoy_dT(nzc+1) = -(US%L_to_Z**2 * GV%g_Earth) / GV%Rlay(nzc)
+    dbuoy_dT(nzc+1) = -GV%g_Earth_Z_T2 / GV%Rlay(nzc)
   endif
 
   ! N2_debug(1) = 0.0 ; N2_debug(nzc+1) = 0.0
@@ -1234,12 +1243,12 @@ subroutine calculate_projected_state(kappa, u0, v0, T0, S0, dt, nz, dz, I_dz_int
   ! Store the squared shear at interfaces
   S2(1) = 0.0 ; S2(nz+1) = 0.0
   if (ks > 1) &
-    S2(ks) = ((u(ks)-u0(ks-1))**2 + (v(ks)-v0(ks-1))**2) * (US%L_to_Z*I_dz_int(ks))**2
+    S2(ks) = (((u(ks)-u0(ks-1))**2) + ((v(ks)-v0(ks-1))**2)) * (US%L_to_Z*I_dz_int(ks))**2
   do K=ks+1,ke
-    S2(K) = ((u(k)-u(k-1))**2 + (v(k)-v(k-1))**2) * (US%L_to_Z*I_dz_int(K))**2
+    S2(K) = (((u(k)-u(k-1))**2) + ((v(k)-v(k-1))**2)) * (US%L_to_Z*I_dz_int(K))**2
   enddo
   if (ke<nz) &
-    S2(ke+1) = ((u0(ke+1)-u(ke))**2 + (v0(ke+1)-v(ke))**2) * (US%L_to_Z*I_dz_int(ke+1))**2
+    S2(ke+1) = (((u0(ke+1)-u(ke))**2) + ((v0(ke+1)-v(ke))**2)) * (US%L_to_Z*I_dz_int(ke+1))**2
 
   ! Store the buoyancy frequency at interfaces
   N2(1) = 0.0 ; N2(nz+1) = 0.0
@@ -1873,6 +1882,10 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
                  "If true, do the calculations of the shear-driven mixing "//&
                  "at the cell vertices (i.e., the vorticity points).", &
                  default=.false., do_not_log=just_read)
+  call get_param(param_file, mdl, "VERTEX_SHEAR_VISCOSITY_BUG", CS%VS_viscosity_bug, &
+                 "If true, use a bug in vertex shear that zeros out viscosities at "//&
+                 "vertices on coastlines.", &
+                 default=.true., do_not_log=just_read.or.(.not.CS%KS_at_vertex))
   call get_param(param_file, mdl, "RINO_CRIT", CS%RiNo_crit, &
                  "The critical Richardson number for shear mixing.", &
                  units="nondim", default=0.25, do_not_log=just_read)
@@ -1956,7 +1969,7 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
                  default=13, do_not_log=just_read)
   call get_param(param_file, mdl, "PRANDTL_TURB", CS%Prandtl_turb, &
                  "The turbulent Prandtl number applied to shear instability.", &
-                 units="nondim", default=1.0, do_not_log=.true.)
+                 units="nondim", default=1.0, do_not_log=just_read)
   call get_param(param_file, mdl, "VEL_UNDERFLOW", CS%vel_underflow, &
                  "A negligibly small velocity magnitude below which velocity components are set "//&
                  "to 0.  A reasonable value might be 1e-30 m/s, which is less than an "//&

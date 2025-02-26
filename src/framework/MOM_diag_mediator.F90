@@ -14,7 +14,6 @@ use MOM_diag_manager_infra, only : diag_axis_init=>MOM_diag_axis_init, get_MOM_d
 use MOM_diag_manager_infra, only : send_data_infra, MOM_diag_field_add_attribute, EAST, NORTH
 use MOM_diag_manager_infra, only : register_diag_field_infra, register_static_field_infra
 use MOM_diag_manager_infra, only : get_MOM_diag_field_id, DIAG_FIELD_NOT_FOUND
-use MOM_diag_manager_infra, only : diag_send_complete_infra
 use MOM_diag_remap,       only : diag_remap_ctrl, diag_remap_update, diag_remap_calc_hmask
 use MOM_diag_remap,       only : diag_remap_init, diag_remap_end, diag_remap_do_remap
 use MOM_diag_remap,       only : vertically_reintegrate_diag_field, vertically_interpolate_diag_field
@@ -973,7 +972,7 @@ subroutine register_cell_measure(G, diag, Time)
   ! Local variables
   integer :: id
   id = register_diag_field('ocean_model', 'volcello', diag%axesTL, &
-                           Time, 'Ocean grid-cell volume', 'm3', &
+                           Time, 'Ocean grid-cell volume', units='m3', conversion=1.0, &
                            standard_name='ocean_volume', v_extensive=.true., &
                            x_cell_method='sum', y_cell_method='sum')
   call diag_associate_volume_cell_measure(diag, id)
@@ -2079,10 +2078,8 @@ end subroutine enable_averages
 subroutine disable_averaging(diag_cs)
   type(diag_ctrl), intent(inout) :: diag_CS !< Structure used to regulate diagnostic output
 
-  call diag_send_complete_infra()
   diag_cs%time_int = 0.0
   diag_cs%ave_enabled = .false.
-
 end subroutine disable_averaging
 
 !> Call this subroutine to determine whether the averaging is
@@ -3156,10 +3153,13 @@ function ocean_register_diag(var_desc, G, diag_CS, day)
   character(len=48) :: units            ! A variable's units.
   character(len=240) :: longname        ! A variable's longname.
   character(len=8) :: hor_grid, z_grid  ! Variable grid info.
+  real :: conversion ! A multiplicative factor for unit conversions for output,
+                     ! as might be needed to convert from intensive to extensive
+                     ! or for dimensional consistency testing [various] or [a A-1 ~> 1]
   type(axes_grp), pointer :: axes => NULL()
 
   call query_vardesc(var_desc, units=units, longname=longname, hor_grid=hor_grid, &
-                     z_grid=z_grid, caller="ocean_register_diag")
+                     z_grid=z_grid, conversion=conversion, caller="ocean_register_diag")
 
   ! Use the hor_grid and z_grid components of vardesc to determine the
   ! desired axes to register the diagnostic field for.
@@ -3214,8 +3214,8 @@ function ocean_register_diag(var_desc, G, diag_CS, day)
         "ocean_register_diag: unknown z_grid component "//trim(z_grid))
   end select
 
-  ocean_register_diag = register_diag_field("ocean_model", trim(var_name), &
-          axes, day, trim(longname), trim(units), missing_value=-1.0e+34)
+  ocean_register_diag = register_diag_field("ocean_model", trim(var_name), axes, day, &
+          trim(longname), units=trim(units), conversion=conversion, missing_value=-1.0e+34)
 
 end function ocean_register_diag
 
@@ -3283,10 +3283,12 @@ subroutine diag_mediator_init(G, GV, US, nz, param_file, diag_cs, doc_file_dir)
   call get_param(param_file, mdl, "DEFAULT_ANSWER_DATE", default_answer_date, &
                  "This sets the default value for the various _ANSWER_DATE parameters.", &
                  default=99991231)
+  call get_param(param_file, mdl, "REMAPPING_USE_OM4_SUBCELLS", om4_remap_via_sub_cells, &
+                 do_not_log=.true., default=.true.)
   call get_param(param_file, mdl, "DIAG_REMAPPING_USE_OM4_SUBCELLS", om4_remap_via_sub_cells, &
                  "If true, use the OM4 remapping-via-subcells algorithm for diagnostics. "//&
                  "See REMAPPING_USE_OM4_SUBCELLS for details. "//&
-                 "We recommend setting this option to false.", default=.true.)
+                 "We recommend setting this option to false.", default=om4_remap_via_sub_cells)
   call get_param(param_file, mdl, "REMAPPING_ANSWER_DATE", remap_answer_date, &
                  "The vintage of the expressions and order of arithmetic to use for remapping.  "//&
                  "Values below 20190101 result in the use of older, less accurate expressions "//&

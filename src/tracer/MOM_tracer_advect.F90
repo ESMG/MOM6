@@ -34,6 +34,8 @@ type, public :: tracer_advect_CS ; private
   logical :: debug                 !< If true, write verbose checksums for debugging purposes.
   logical :: usePPM                !< If true, use PPM instead of PLM
   logical :: useHuynh              !< If true, use the Huynh scheme for PPM interface values
+  logical :: useHuynhStencilBug = .false. !< If true, use the incorrect stencil width.
+                                   !! This is provided for compatibility with legacy simuations.
   type(group_pass_type) :: pass_uhr_vhr_t_hprev !< A structure used for group passes
 end type tracer_advect_CS
 
@@ -94,6 +96,7 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
                                        ! can be simply discarded [H L2 ~> m3 or kg].
 
   real :: landvolfill                   ! An arbitrary? nonzero cell volume [H L2 ~> m3 or kg].
+  logical :: use_PPM_stencil            ! If true, use the correct PPM stencil width.
   real :: Idt                           ! 1/dt [T-1 ~> s-1].
   logical :: domore_u(SZJ_(G),SZK_(GV))  ! domore_u and domore_v indicate whether there is more
   logical :: domore_v(SZJB_(G),SZK_(GV)) ! advection to be done in the corresponding row or column.
@@ -112,7 +115,7 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
   landvolfill = 1.0e-20         ! This is arbitrary, but must be positive.
-  stencil = 2                   ! The scheme's stencil; 2 for PLM and PPM:H3
+  stencil = 2                   ! The scheme's stencil; 2 for PLM
 
   if (.not. associated(CS)) call MOM_error(FATAL, "MOM_tracer_advect: "// &
        "tracer_advect_init must be called before advect_tracer.")
@@ -123,8 +126,8 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
   x_first = (MOD(G%first_direction,2) == 0)
 
   ! increase stencil size for Colella & Woodward PPM
-! if (CS%usePPM .and. .not. CS%useHuynh) stencil = 3
-  if (CS%usePPM) stencil = 3
+  use_PPM_stencil = CS%usePPM .and. .not. CS%useHuynhStencilBug
+  if (use_PPM_stencil) stencil = 3
 
   ntr = Reg%ntr
   Idt = 1.0 / dt
@@ -537,9 +540,9 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
         if (G%mask2dCu(I_up,j)*G%mask2dCu(I_up-1,j)*(Tp-Tc)*(Tc-Tm) <= 0.) then
           aL = Tc ; aR = Tc ! PCM for local extrema and boundary cells
         elseif ( dA*(Tc-mA) > (dA*dA)/6. ) then
-          aL = 3.*Tc - 2.*aR
+          aL = (3.*Tc) - 2.*aR
         elseif ( dA*(Tc-mA) < - (dA*dA)/6. ) then
-          aR = 3.*Tc - 2.*aL
+          aR = (3.*Tc) - 2.*aL
         endif
 
         a6 = 6.*Tc - 3. * (aR + aL) ! Curvature
@@ -644,6 +647,21 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
         do_i(i,j) = .false.
       endif
     enddo
+
+    ! Update do_i so that nothing changes outside of the OBC (problem for interior OBCs only)
+    if (associated(OBC)) then
+      if ((OBC%exterior_OBC_bug .eqv. .false.) .and. (OBC%OBC_pe)) then
+        if (OBC%specified_u_BCs_exist_globally .or. OBC%open_u_BCs_exist_globally) then
+          do i=is,ie-1 ; if (OBC%segnum_u(I,j) /= OBC_NONE) then
+            if (OBC%segment(OBC%segnum_u(I,j))%direction == OBC_DIRECTION_E) then
+              do_i(i+1,j) = .false.
+            elseif (OBC%segment(OBC%segnum_u(I,j))%direction == OBC_DIRECTION_W) then
+              do_i(i,j) = .false.
+            endif
+          endif ; enddo
+        endif
+      endif
+    endif
 
     ! update tracer concentration from i-flux and save some diagnostics
     do m=1,ntr
@@ -922,9 +940,9 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
         if (G%mask2dCv(i,J_up)*G%mask2dCv(i,J_up-1)*(Tp-Tc)*(Tc-Tm) <= 0.) then
           aL = Tc ; aR = Tc ! PCM for local extrema and boundary cells
         elseif ( dA*(Tc-mA) > (dA*dA)/6. ) then
-          aL = 3.*Tc - 2.*aR
+          aL = (3.*Tc) - 2.*aR
         elseif ( dA*(Tc-mA) < - (dA*dA)/6. ) then
-          aR = 3.*Tc - 2.*aL
+          aR = (3.*Tc) - 2.*aL
         endif
 
         a6 = 6.*Tc - 3. * (aR + aL) ! Curvature
@@ -1036,6 +1054,26 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
       else ; do_i(i,j) = .false. ; endif
     enddo
 
+    ! Update do_i so that nothing changes outside of the OBC (problem for interior OBCs only)
+    if (associated(OBC)) then
+      if ((OBC%exterior_OBC_bug .eqv. .false.) .and. (OBC%OBC_pe)) then
+        if (OBC%specified_v_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) then
+          do i=is,ie
+            if (OBC%segnum_v(i,J-1) /= OBC_NONE) then
+              if (OBC%segment(OBC%segnum_v(i,J-1))%direction == OBC_DIRECTION_N) then
+                do_i(i,j) = .false.
+              endif
+            endif
+            if (OBC%segnum_v(i,J) /= OBC_NONE) then
+              if (OBC%segment(OBC%segnum_v(i,J))%direction == OBC_DIRECTION_S) then
+                do_i(i,j) = .false.
+              endif
+            endif
+          enddo
+        endif
+      endif
+    endif
+
     ! update tracer and save some diagnostics
     do m=1,ntr
       do i=is,ie ; if (do_i(i,j)) then
@@ -1129,6 +1167,18 @@ subroutine tracer_advect_init(Time, G, US, param_file, diag, CS)
       call MOM_error(FATAL, "MOM_tracer_advect, tracer_advect_init: "//&
            "Unknown TRACER_ADVECTION_SCHEME = "//trim(mesg))
   end select
+
+  if (CS%usePPM) then
+    if (CS%useHuynh) then
+      call get_param(param_file, mdl, "USE_HUYNH_STENCIL_BUG", &
+        CS%useHuynhStencilBug, &
+        desc="If true, use a stencil width of 2 in PPM:H3 tracer advection. " &
+        // "This is incorrect and will produce regressions in certain " &
+        // "configurations, but may be required to reproduce results in " &
+        // "legacy simulations.", &
+        default=.false.)
+    endif
+  endif
 
   id_clock_advect = cpu_clock_id('(Ocean advect tracer)', grain=CLOCK_MODULE)
   id_clock_pass = cpu_clock_id('(Ocean tracer halo updates)', grain=CLOCK_ROUTINE)

@@ -169,22 +169,26 @@ type, public :: dyn_horgrid_type
     Dblock_v, &   !< Topographic depths at v-points at which the flow is blocked [Z ~> m].
     Dopen_v       !< Topographic depths at v-points at which the flow is open at width dx_Cv [Z ~> m].
   real, allocatable, dimension(:,:) :: &
-    CoriolisBu    !< The Coriolis parameter at corner points [T-1 ~> s-1].
+    CoriolisBu, & !< The Coriolis parameter at corner points [T-1 ~> s-1].
+    Coriolis2Bu   !< The square of the Coriolis parameter at corner points [T-2 ~> s-2].
   real, allocatable, dimension(:,:) :: &
     df_dx, &      !< Derivative d/dx f (Coriolis parameter) at h-points [T-1 L-1 ~> s-1 m-1].
     df_dy         !< Derivative d/dy f (Coriolis parameter) at h-points [T-1 L-1 ~> s-1 m-1].
 
-  ! These variables are global sums that are useful for 1-d diagnostics and should not be rescaled.
-  real :: areaT_global  !< Global sum of h-cell area [m2]
-  real :: IareaT_global !< Global sum of inverse h-cell area (1/areaT_global) [m-2]
+  ! These variables are global sums that are useful for 1-d diagnostics.
+  real :: areaT_global  !< Global sum of h-cell area [L2 ~> m2]
+  real :: IareaT_global !< Global sum of inverse h-cell area (1/areaT_global) [L-2 ~> m-2]
 
   ! These parameters are run-time parameters that are used during some
   ! initialization routines (but not all)
+  real :: grid_unit_to_L !< A factor that converts a the geoLat and geoLon variables and related
+                        !! variables like len_lat and len_lon into rescaled horizontal distance
+                        !! units on a Cartesian grid, in [L km ~> 1000] or [L m-1 ~> 1] or
+                        !! is 0 for a non-Cartesian grid.
   real :: south_lat     !< The latitude (or y-coordinate) of the first v-line [degrees_N] or [km] or [m]
   real :: west_lon      !< The longitude (or x-coordinate) of the first u-line [degrees_E] or [km] or [m]
   real :: len_lat       !< The latitudinal (or y-coord) extent of physical domain [degrees_N] or [km] or [m]
   real :: len_lon       !< The longitudinal (or x-coord) extent of physical domain [degrees_E] or [km] or [m]
-  real :: Rad_Earth     !< The radius of the planet [m]
   real :: Rad_Earth_L   !< The radius of the planet in rescaled units [L ~> m]
   real :: max_depth     !< The maximum depth of the ocean [Z ~> m]
 end type dyn_horgrid_type
@@ -289,6 +293,7 @@ subroutine create_dyn_horgrid(G, HI, bathymetry_at_vel)
 
   allocate(G%bathyT(isd:ied, jsd:jed), source=0.0)
   allocate(G%CoriolisBu(IsdB:IedB, JsdB:JedB), source=0.0)
+  allocate(G%Coriolis2Bu(IsdB:IedB, JsdB:JedB), source=0.0)
   allocate(G%dF_dx(isd:ied, jsd:jed), source=0.0)
   allocate(G%dF_dy(isd:ied, jsd:jed), source=0.0)
 
@@ -360,6 +365,7 @@ subroutine rotate_dyn_horgrid(G_in, G, US, turns)
   call rotate_array_pair(G_in%dxBu, G_in%dyBu, turns, G%dxBu, G%dyBu)
   call rotate_array(G_in%areaBu, turns, G%areaBu)
   call rotate_array(G_in%CoriolisBu, turns, G%CoriolisBu)
+  call rotate_array(G_in%Coriolis2Bu, turns, G%Coriolis2Bu)
   call rotate_array(G_in%mask2dBu, turns, G%mask2dBu)
 
   ! Topography at the cell faces
@@ -397,9 +403,9 @@ subroutine rotate_dyn_horgrid(G_in, G, US, turns)
   G%len_lon = G_in%len_lon
 
   ! Rotation-invariant fields
+  G%grid_unit_to_L = G_in%grid_unit_to_L
   G%areaT_global = G_in%areaT_global
   G%IareaT_global = G_in%IareaT_global
-  G%Rad_Earth = G_in%Rad_Earth
   G%Rad_Earth_L = G_in%Rad_Earth_L
   G%max_depth = G_in%max_depth
 
@@ -528,8 +534,8 @@ subroutine destroy_dyn_horgrid(G)
   deallocate(G%porous_DminU) ; deallocate(G%porous_DmaxU) ; deallocate(G%porous_DavgU)
   deallocate(G%porous_DminV) ; deallocate(G%porous_DmaxV) ; deallocate(G%porous_DavgV)
 
-  deallocate(G%bathyT)  ; deallocate(G%CoriolisBu)
-  deallocate(G%dF_dx)  ; deallocate(G%dF_dy)
+  deallocate(G%bathyT)  ; deallocate(G%CoriolisBu) ; deallocate(G%Coriolis2Bu)
+  deallocate(G%dF_dx)   ; deallocate(G%dF_dy)
   deallocate(G%sin_rot) ; deallocate(G%cos_rot)
 
   if (allocated(G%Dblock_u)) deallocate(G%Dblock_u)
