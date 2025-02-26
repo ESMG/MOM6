@@ -26,13 +26,13 @@ use MOM_restart, only : register_restart_field, register_restart_pair
 use MOM_restart, only : query_initialized, MOM_restart_CS
 use MOM_self_attr_load, only : scalar_SAL_sensitivity
 use MOM_self_attr_load, only : SAL_CS
-use MOM_streaming_filter, only : Filt_register, Filt_accum, Filter_CS
-use MOM_tidal_forcing, only : tidal_frequency
+use MOM_streaming_filter, only : Filt_register, Filt_init, Filt_accum, Filter_CS
 use MOM_time_manager, only : time_type, real_to_time, operator(+), operator(-)
 use MOM_unit_scaling, only : unit_scale_type
 use MOM_variables, only : BT_cont_type, alloc_bt_cont_type
 use MOM_verticalGrid, only : verticalGrid_type
 use MOM_variables, only : accel_diag_ptrs
+use MOM_wave_drag, only : wave_drag_init, wave_drag_calc, wave_drag_CS
 
 implicit none ; private
 
@@ -156,6 +156,7 @@ type, public :: barotropic_CS ; private
 
   real, allocatable :: frhatu1(:,:,:)  !< Predictor step values of frhatu stored for diagnostics [nondim]
   real, allocatable :: frhatv1(:,:,:)  !< Predictor step values of frhatv stored for diagnostics [nondim]
+  real, allocatable :: IareaT_OBCmask(:,:)  !< If non-zero, work on given points [L-2 ~> m-2].
 
   type(BT_OBC_type) :: BT_OBC !< A structure with all of this modules fields
                               !! for applying open boundary conditions.
@@ -250,10 +251,10 @@ type, public :: barotropic_CS ; private
   logical :: linearized_BT_PV  !< If true, the PV and interface thicknesses used
                              !! in the barotropic Coriolis calculation is time
                              !! invariant and linearized.
-  logical :: use_filter_m2   !< If true, apply streaming band-pass filter for detecting
-                             !! instantaneous tidal signals.
-  logical :: use_filter_k1   !< If true, apply streaming band-pass filter for detecting
-                             !! instantaneous tidal signals.
+  logical :: use_filter      !< If true, use streaming band-pass filter to detect the
+                             !! instantaneous tidal signals in the simulation.
+  logical :: linear_freq_drag  !< If true, apply a linear frequency-dependent drag to the tidal
+                             !! velocities. The streaming band-pass filter must be turned on.
   logical :: use_wide_halos  !< If true, use wide halos and march in during the
                              !! barotropic time stepping for efficiency.
   logical :: clip_velocity   !< If true, limit any velocity components that are
@@ -290,6 +291,8 @@ type, public :: barotropic_CS ; private
                              !! consistent with tidal self-attraction and loading
                              !! used within the barotropic solver
   logical :: wt_uv_bug = .true. !< If true, recover a bug that wt_[uv] that is not normalized.
+  logical :: exterior_OBC_bug = .true. !< If true, recover a bug with boundary conditions
+                             !! inside the domain.
   type(time_type), pointer :: Time  => NULL() !< A pointer to the ocean models clock.
   type(diag_ctrl), pointer :: diag => NULL()  !< A structure that is used to regulate
                              !! the timing of diagnostic output.
@@ -297,10 +300,9 @@ type, public :: barotropic_CS ; private
   type(hor_index_type), pointer :: debug_BT_HI => NULL() !< debugging copy of horizontal index_type
   type(SAL_CS), pointer :: SAL_CSp => NULL() !< Control structure for SAL
   type(harmonic_analysis_CS), pointer :: HA_CSp => NULL() !< Control structure for harmonic analysis
-  type(Filter_CS) :: Filt_CS_um2, & !< Control structures for the M2 streaming filter
-                     Filt_CS_vm2, & !< Control structures for the M2 streaming filter
-                     Filt_CS_uk1, & !< Control structures for the K1 streaming filter
-                     Filt_CS_vk1    !< Control structures for the K1 streaming filter
+  type(Filter_CS) :: Filt_CS_u, & !< Control structures for the streaming band-pass filter of ubt
+                     Filt_CS_v    !< Control structures for the streaming band-pass filter of vbt
+  type(wave_drag_CS) :: Drag_CS !< Control structures for the frequency-dependent drag
   logical :: module_is_initialized = .false.  !< If true, module has been initialized
 
   integer :: isdw !< The lower i-memory limit for the wide halo arrays.
@@ -608,8 +610,12 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     DCor_v, &     ! An averaged total thickness at v points [H ~> m or kg m-2].
     Datv          ! Basin depth at v-velocity grid points times the x-grid
                   ! spacing [H L ~> m2 or kg m-1].
-  real, dimension(:,:), pointer :: um2, uk1, vm2, vk1
-                  ! M2 and K1 velocities from the output of streaming filters [m s-1]
+  real, dimension(:,:,:), pointer :: ufilt, vfilt
+                  ! Filtered velocities from the output of streaming filters [L T-1 ~> m s-1]
+  real, dimension(SZIB_(G),SZJ_(G)) :: Drag_u
+                  ! The zonal acceleration due to frequency-dependent drag [L T-2 ~> m s-2]
+  real, dimension(SZI_(G),SZJB_(G)) :: Drag_v
+                  ! The meridional acceleration due to frequency-dependent drag [L T-2 ~> m s-2]
   real, target, dimension(SZIW_(CS),SZJW_(CS)) :: &
     eta, &        ! The barotropic free surface height anomaly or column mass
                   ! anomaly [H ~> m or kg m-2]
@@ -1428,6 +1434,42 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     enddo ; enddo
   endif
 
+  ! Compute instantaneous tidal velocities and apply frequency-dependent drag.
+  ! Note that the filtered velocities are only updated during the current predictor step,
+  ! and are calculated using the barotropic velocity from the previous correction step.
+  if (CS%use_filter) then
+    call Filt_accum(ubt(G%IsdB:G%IedB,G%jsd:G%jed), ufilt, CS%Time, US, CS%Filt_CS_u)
+    call Filt_accum(vbt(G%isd:G%ied,G%JsdB:G%JedB), vfilt, CS%Time, US, CS%Filt_CS_v)
+  endif
+
+  if (CS%use_filter .and. CS%linear_freq_drag) then
+    call wave_drag_calc(ufilt, vfilt, Drag_u, Drag_v, G, CS%Drag_CS)
+    !$OMP do
+    do j=js,je ; do I=is-1,ie
+      Htot = 0.5 * (eta(i,j) + eta(i+1,j))
+      if (GV%Boussinesq) &
+        Htot = Htot + 0.5*GV%Z_to_H * (CS%bathyT(i,j) + CS%bathyT(i+1,j))
+      if (Htot > 0.0) then
+        Drag_u(I,j) = Drag_u(I,j) / Htot
+        BT_force_u(I,j) = BT_force_u(I,j) - Drag_u(I,j)
+      else
+        Drag_u(I,j) = 0.0
+      endif
+    enddo ; enddo
+    !$OMP do
+    do J=js-1,je ; do i=is,ie
+      Htot = 0.5 * (eta(i,j) + eta(i,j+1))
+      if (GV%Boussinesq) &
+        Htot = Htot + 0.5*GV%Z_to_H * (CS%bathyT(i,j) + CS%bathyT(i,j+1))
+      if (Htot > 0.0) then
+        Drag_v(i,J) = Drag_v(i,J) / Htot
+        BT_force_v(i,J) = BT_force_v(i,J) - Drag_v(i,J)
+      else
+        Drag_v(i,J) = 0.0
+      endif
+    enddo ; enddo
+  endif
+
   if ((Isq > is-1) .or. (Jsq > js-1)) then
     ! Non-symmetric memory is being used, so the edge values need to be
     ! filled in with a halo update of a non-symmetric array.
@@ -1597,17 +1639,6 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
 
       Rayleigh_v(i,J) = CS%lin_drag_v(i,J) / Htot
     endif ; enddo ; enddo
-  endif
-
-  ! Here is an example of how the filter equations are time stepped to determine the M2 and K1 velocities.
-  ! The filters are initialized and registered in subroutine barotropic_init.
-  if (CS%use_filter_m2) then
-    call Filt_accum(ubt, um2, CS%Time, US, CS%Filt_CS_um2)
-    call Filt_accum(vbt, vm2, CS%Time, US, CS%Filt_CS_vm2)
-  endif
-  if (CS%use_filter_k1) then
-    call Filt_accum(ubt, uk1, CS%Time, US, CS%Filt_CS_uk1)
-    call Filt_accum(vbt, vk1, CS%Time, US, CS%Filt_CS_vk1)
   endif
 
   ! Zero out the arrays for various time-averaged quantities.
@@ -1934,7 +1965,7 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
         enddo ; enddo
         !$OMP do
         do j=jsv-1,jev+1 ; do i=isv-1,iev+1
-          eta_pred(i,j) = (eta_IC(i,j) + n*eta_src(i,j)) + CS%IareaT(i,j) * &
+          eta_pred(i,j) = (eta_IC(i,j) + n*eta_src(i,j)) + CS%IareaT_OBCmask(i,j) * &
                      ((uhbt_int(I-1,j) - uhbt_int(I,j)) + (vhbt_int(i,J-1) - vhbt_int(i,J)))
         enddo ; enddo
       elseif (use_BT_cont) then
@@ -1948,13 +1979,13 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
         enddo ; enddo
         !$OMP do
         do j=jsv-1,jev+1 ; do i=isv-1,iev+1
-          eta_pred(i,j) = (eta(i,j) + eta_src(i,j)) + (dtbt * CS%IareaT(i,j)) * &
+          eta_pred(i,j) = (eta(i,j) + eta_src(i,j)) + (dtbt * CS%IareaT_OBCmask(i,j)) * &
                      ((uhbt(I-1,j) - uhbt(I,j)) + (vhbt(i,J-1) - vhbt(i,J)))
         enddo ; enddo
       else
         !$OMP do
         do j=jsv-1,jev+1 ; do i=isv-1,iev+1
-          eta_pred(i,j) = (eta(i,j) + eta_src(i,j)) + (dtbt * CS%IareaT(i,j)) * &
+          eta_pred(i,j) = (eta(i,j) + eta_src(i,j)) + (dtbt * CS%IareaT_OBCmask(i,j)) * &
               (((Datu(I-1,j)*ubt(I-1,j) + uhbt0(I-1,j)) - &
                 (Datu(I,j)*ubt(I,j) + uhbt0(I,j))) + &
                ((Datv(i,J-1)*vbt(i,J-1) + vhbt0(i,J-1)) - &
@@ -2496,14 +2527,14 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     if (integral_BT_cont) then
       !$OMP do
       do j=jsv,jev ; do i=isv,iev
-        eta(i,j) = (eta_IC(i,j) + n*eta_src(i,j)) + factor(i,j) * &
+        eta(i,j) = (eta_IC(i,j) + n*eta_src(i,j)) + CS%IareaT_OBCmask(i,j) * &
                    ((uhbt_int(I-1,j) - uhbt_int(I,j)) + (vhbt_int(i,J-1) - vhbt_int(i,J)))
         eta_wtd(i,j) = eta_wtd(i,j) + eta(i,j) * wt_eta(n)
       enddo ; enddo
     else
       !$OMP do
       do j=jsv,jev ; do i=isv,iev
-        eta(i,j) = (eta(i,j) + eta_src(i,j)) + (dtbt * factor(i,j)) * &
+        eta(i,j) = (eta(i,j) + eta_src(i,j)) + (dtbt * CS%IareaT_OBCmask(i,j)) * &
                    ((uhbt(I-1,j) - uhbt(I,j)) + (vhbt(i,J-1) - vhbt(i,J)))
         eta_wtd(i,j) = eta_wtd(i,j) + eta(i,j) * wt_eta(n)
       enddo ; enddo
@@ -2651,6 +2682,17 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
     do J=js-1,je ; do i=is,ie
       CS%vbtav(i,J) = vbt_sum(i,J)
       vhbtav(i,J) = vhbt_sum(i,J)
+    enddo ; enddo
+  endif
+
+  if (CS%use_filter .and. CS%linear_freq_drag) then ! Apply frequency-dependent drag
+    !$OMP do
+    do j=js,je ; do I=is-1,ie
+      u_accel_bt(I,j) = u_accel_bt(I,j) - Drag_u(I,j)
+    enddo ; enddo
+    !$OMP do
+    do J=js-1,je ; do i=is,ie
+      v_accel_bt(i,J) = v_accel_bt(i,J) - Drag_v(i,J)
     enddo ; enddo
   endif
 
@@ -2892,26 +2934,26 @@ subroutine btstep(U_in, V_in, eta_in, dt, bc_accel_u, bc_accel_v, forces, pbce, 
 
 end subroutine btstep
 
-!> This subroutine automatically determines an optimal value for dtbt based
-!! on some state of the ocean.
-subroutine set_dtbt(G, GV, US, CS, eta, pbce, BT_cont, gtot_est, SSH_add)
+!> This subroutine automatically determines an optimal value for dtbt based on some state of the ocean. Either pbce or
+!! gtot_est is required to calculate gravitational acceleration. Column thickness can be estimated using BT_cont, eta,
+!! and SSH_add (default=0), with priority given in that order. The subroutine sets CS%dtbt_max and CS%dtbt.
+subroutine set_dtbt(G, GV, US, CS, pbce, gtot_est, BT_cont, eta, SSH_add)
   type(ocean_grid_type),        intent(inout) :: G    !< The ocean's grid structure.
   type(verticalGrid_type),      intent(in)    :: GV   !< The ocean's vertical grid structure.
   type(unit_scale_type),        intent(in)    :: US   !< A dimensional unit scaling type
   type(barotropic_CS),          intent(inout) :: CS   !< Barotropic control structure
-  real, dimension(SZI_(G),SZJ_(G)), optional, intent(in) :: eta  !< The barotropic free surface
-                                                      !! height anomaly or column mass anomaly [H ~> m or kg m-2].
-  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), optional, intent(in) :: pbce  !< The baroclinic pressure
-                                                      !! anomaly in each layer due to free surface
-                                                      !! height anomalies [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
-  type(BT_cont_type), optional, pointer       :: BT_cont  !< A structure with elements that describe
-                                                      !! the effective open face areas as a
-                                                      !! function of barotropic flow.
-  real,               optional, intent(in)    :: gtot_est !< An estimate of the total gravitational
-                                                      !! acceleration [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
-  real,               optional, intent(in)    :: SSH_add  !< An additional contribution to SSH to
-                                                      !! provide a margin of error when
-                                                      !! calculating the external wave speed [Z ~> m].
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                      optional, intent(in)    :: pbce !< The baroclinic pressure anomaly in each layer due to free
+                                                      !! surface height anomalies [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
+  real,               optional, intent(in)    :: gtot_est !< An estimate of the total gravitational acceleration
+                                                      !! [L2 H-1 T-2 ~> m s-2 or m4 kg-1 s-2].
+  type(BT_cont_type), optional, pointer       :: BT_cont  !< A structure with elements that describe the effective open
+                                                      !! face areas as a function of barotropic flow.
+  real, dimension(SZI_(G),SZJ_(G)), &
+                      optional, intent(in)    :: eta  !< The barotropic free surface height anomaly or  column mass
+                                                      !! anomaly [H ~> m or kg m-2].
+  real,               optional, intent(in)    :: SSH_add !< An additional contribution to SSH to provide a margin of
+                                                      !! error when calculating the external wave speed [Z ~> m].
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
@@ -3280,7 +3322,7 @@ subroutine set_up_BT_OBC(OBC, eta, SpV_avg, BT_OBC, BT_Domain, G, GV, US, CS, MS
   type(ocean_grid_type),                 intent(inout) :: G      !< The ocean's grid structure.
   type(verticalGrid_type),               intent(in)    :: GV     !< The ocean's vertical grid structure.
   type(unit_scale_type),                 intent(in)    :: US     !< A dimensional unit scaling type
-  type(barotropic_CS),                   intent(in)    :: CS     !< Barotropic control structure
+  type(barotropic_CS),                   intent(inout) :: CS     !< Barotropic control structure
   integer,                               intent(in)    :: halo   !< The extra halo size to use here.
   logical,                               intent(in)    :: use_BT_cont !< If true, use the BT_cont_types to calculate
                                                                  !! transports.
@@ -3336,6 +3378,7 @@ subroutine set_up_BT_OBC(OBC, eta, SpV_avg, BT_OBC, BT_Domain, G, GV, US, CS, MS
     allocate(BT_OBC%vhbt(isdw:iedw,jsdw-1:jedw), source=0.0)
     allocate(BT_OBC%vbt_outer(isdw:iedw,jsdw-1:jedw), source=0.0)
     allocate(BT_OBC%SSH_outer_v(isdw:iedw,jsdw-1:jedw), source=0.0)
+
     BT_OBC%is_alloced = .true.
     call create_group_pass(BT_OBC%pass_uv, BT_OBC%ubt_outer, BT_OBC%vbt_outer, BT_Domain)
     call create_group_pass(BT_OBC%pass_uhvh, BT_OBC%uhbt, BT_OBC%vhbt, BT_Domain)
@@ -3478,6 +3521,7 @@ subroutine destroy_BT_OBC(BT_OBC)
     deallocate(BT_OBC%vhbt)
     deallocate(BT_OBC%vbt_outer)
     deallocate(BT_OBC%SSH_outer_v)
+
     BT_OBC%is_alloced = .false.
   endif
 end subroutine destroy_BT_OBC
@@ -4469,8 +4513,8 @@ end subroutine bt_mass_source
 !> barotropic_init initializes a number of time-invariant fields used in the
 !! barotropic calculation and initializes any barotropic fields that have not
 !! already been initialized.
-subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, &
-                           restart_CS, calc_dtbt, BT_cont, SAL_CSp, HA_CSp)
+subroutine barotropic_init(u, v, h, Time, G, GV, US, param_file, diag, CS, &
+                           restart_CS, calc_dtbt, BT_cont, OBC, SAL_CSp, HA_CSp)
   type(ocean_grid_type),   intent(inout) :: G    !< The ocean's grid structure.
   type(verticalGrid_type), intent(in)    :: GV   !< The ocean's vertical grid structure.
   type(unit_scale_type),   intent(in)    :: US   !< A dimensional unit scaling type
@@ -4480,9 +4524,6 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
                            intent(in)    :: v    !< The meridional velocity [L T-1 ~> m s-1].
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                            intent(in)    :: h    !< Layer thicknesses [H ~> m or kg m-2].
-  real, dimension(SZI_(G),SZJ_(G)), &
-                           intent(in)    :: eta  !< Free surface height or column mass anomaly
-                                                 !! [Z ~> m] or [H ~> kg m-2].
   type(time_type), target, intent(in)    :: Time !< The current model time.
   type(param_file_type),   intent(in)    :: param_file !< A structure to parse for run-time parameters.
   type(diag_ctrl), target, intent(inout) :: diag !< A structure that is used to regulate diagnostic
@@ -4494,7 +4535,8 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   type(BT_cont_type),      pointer       :: BT_cont    !< A structure with elements that describe the
                                                  !! effective open face areas as a function of
                                                  !! barotropic flow.
-  type(SAL_CS), target, optional :: SAL_CSp      !< A pointer to the control structure of the
+  type(ocean_OBC_type),    pointer       :: OBC  !< The open boundary condition structure.
+  type(SAL_CS), target,    optional      :: SAL_CSp  !< A pointer to the control structure of the
                                                  !! SAL module.
   type(harmonic_analysis_CS), target, optional :: HA_CSp !< A pointer to the control structure of the
                                                  !! harmonic analysis module
@@ -4510,7 +4552,7 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   real :: SSH_extra     ! An estimate of how much higher SSH might get, for use
                         ! in calculating the safe external wave speed [Z ~> m].
   real :: dtbt_input    ! The input value of DTBT, [nondim] if negative or [s] if positive.
-  real :: dtbt_tmp      ! A temporary copy of CS%dtbt read from a restart file [T ~> s]
+  real :: dtbt_restart  ! A temporary copy of CS%dtbt read from a restart file [T ~> s]
   real :: wave_drag_scale ! A scaling factor for the barotropic linear wave drag
                           ! piston velocities [nondim].
   character(len=200) :: inputdir       ! The directory in which to find input files.
@@ -4692,6 +4734,10 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
                  "If true, recover a bug in barotropic solver that uses an unnormalized weight "//&
                  "function for vertical averages of baroclinic velocity and forcing. Default "//&
                  "of this flag is set by VISC_REM_BUG.", default=visc_rem_bug)
+  call get_param(param_file, mdl, "EXTERIOR_OBC_BUG", CS%exterior_OBC_bug, &
+                 "If true, recover a bug in barotropic solver and other routines when "//&
+                 "boundary contitions interior to the domain are used.", &
+                 default=.true., do_not_log=.true.)
   call get_param(param_file, mdl, "TIDES", use_tides, &
                  "If true, apply tidal momentum forcing.", default=.false.)
   if (use_tides .and. present(HA_CSp)) CS%HA_CSp => HA_CSp
@@ -4758,9 +4804,13 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
                  "using rates set by lin_drag_u & _v divided by the depth of "//&
                  "the ocean.  This was introduced to facilitate tide modeling.", &
                  default=.false.)
+  call get_param(param_file, mdl, "BT_LINEAR_FREQ_DRAG", CS%linear_freq_drag, &
+                 "If true, apply frequency-dependent drag to the tidal velocities. "//&
+                 "The streaming band-pass filter must be turned on.", default=.false.)
   call get_param(param_file, mdl, "BT_WAVE_DRAG_FILE", wave_drag_file, &
                  "The name of the file with the barotropic linear wave drag "//&
-                 "piston velocities.", default="", do_not_log=.not.CS%linear_wave_drag)
+                 "piston velocities.", default="", &
+                 do_not_log=.not.CS%linear_wave_drag.and..not.CS%linear_freq_drag)
   call get_param(param_file, mdl, "BT_WAVE_DRAG_VAR", wave_drag_var, &
                  "The name of the variable in BT_WAVE_DRAG_FILE with the "//&
                  "barotropic linear wave drag piston velocities at h points. "//&
@@ -4930,10 +4980,48 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   ALLOC_(CS%IdyCv(CS%isdw:CS%iedw,CS%jsdw-1:CS%jedw)) ; CS%IdyCv(:,:) = 0.0
   ALLOC_(CS%dy_Cu(CS%isdw-1:CS%iedw,CS%jsdw:CS%jedw)) ; CS%dy_Cu(:,:) = 0.0
   ALLOC_(CS%dx_Cv(CS%isdw:CS%iedw,CS%jsdw-1:CS%jedw)) ; CS%dx_Cv(:,:) = 0.0
+  allocate(CS%IareaT_OBCmask(isdw:iedw,jsdw:jedw), source=0.0)
   do j=G%jsd,G%jed ; do i=G%isd,G%ied
     CS%IareaT(i,j) = G%IareaT(i,j)
     CS%bathyT(i,j) = G%bathyT(i,j)
+    CS%IareaT_OBCmask(i,j) = CS%IareaT(i,j)
   enddo ; enddo
+
+  ! Update IareaT_OBCmask so that nothing changes outside of the OBC (problem for interior OBCs only)
+  if (associated(OBC) .and. (CS%exterior_OBC_bug .eqv. .false.)) then
+    if (OBC%specified_u_BCs_exist_globally .or. OBC%open_u_BCs_exist_globally) then
+      do i=isd,ied
+        do j=jsd,jed
+          if (OBC%segnum_u(I-1,j) /= OBC_NONE) then
+            if (OBC%segment(OBC%segnum_u(I-1,j))%direction == OBC_DIRECTION_E) then
+              CS%IareaT_OBCmask(i,j) = 0.0
+            endif
+          endif
+          if (OBC%segnum_u(I,j) /= OBC_NONE) then
+            if (OBC%segment(OBC%segnum_u(I,j))%direction == OBC_DIRECTION_W) then
+              CS%IareaT_OBCmask(i,j) = 0.0
+            endif
+          endif
+        enddo
+      enddo
+    endif
+    if (OBC%specified_v_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) then
+      do j=jsd,jed
+        do i=isd,ied
+          if (OBC%segnum_v(i,J-1) /= OBC_NONE) then
+            if (OBC%segment(OBC%segnum_v(i,J-1))%direction == OBC_DIRECTION_N) then
+              CS%IareaT_OBCmask(i,j) = 0.0
+            endif
+          endif
+          if (OBC%segnum_v(i,J) /= OBC_NONE) then
+            if (OBC%segment(OBC%segnum_v(i,J))%direction == OBC_DIRECTION_S) then
+              CS%IareaT_OBCmask(i,j) = 0.0
+            endif
+          endif
+        enddo
+      enddo
+    endif
+  endif
 
   ! Note: G%IdxCu & G%IdyCv may be valid for a smaller extent than CS%IdxCu & CS%IdyCv, even without
   !   wide halos.
@@ -4945,6 +5033,7 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
   enddo ; enddo
   call create_group_pass(pass_static_data, CS%IareaT, CS%BT_domain, To_All)
   call create_group_pass(pass_static_data, CS%bathyT, CS%BT_domain, To_All)
+  call create_group_pass(pass_static_data, CS%IareaT_OBCmask, CS%BT_domain, To_All)
   call create_group_pass(pass_static_data, CS%IdxCu, CS%IdyCv, CS%BT_domain, To_All+Scalar_Pair)
   call create_group_pass(pass_static_data, CS%dy_Cu, CS%dx_Cv, CS%BT_domain, To_All+Scalar_Pair)
   call do_group_pass(pass_static_data, CS%BT_domain)
@@ -4995,15 +5084,10 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
 
       if (len_trim(wave_drag_u) > 0 .and. len_trim(wave_drag_v) > 0) then
         call MOM_read_data(wave_drag_file, wave_drag_u, CS%lin_drag_u, G%Domain, &
-                           position=EAST_FACE, scale=GV%m_to_H*US%T_to_s)
-        call pass_var(CS%lin_drag_u, G%Domain)
-        CS%lin_drag_u(:,:) = wave_drag_scale * CS%lin_drag_u(:,:)
-
+                           position=EAST_FACE, scale=wave_drag_scale*GV%m_to_H*US%T_to_s)
         call MOM_read_data(wave_drag_file, wave_drag_v, CS%lin_drag_v, G%Domain, &
-                           position=NORTH_FACE, scale=GV%m_to_H*US%T_to_s)
-        call pass_var(CS%lin_drag_v, G%Domain)
-        CS%lin_drag_v(:,:) = wave_drag_scale * CS%lin_drag_v(:,:)
-
+                           position=NORTH_FACE, scale=wave_drag_scale*GV%m_to_H*US%T_to_s)
+        call pass_vector(CS%lin_drag_u, CS%lin_drag_v, G%domain, direction=To_All+SCALAR_PAIR)
       else
         allocate(lin_drag_h(isd:ied,jsd:jed), source=0.0)
 
@@ -5020,11 +5104,26 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
     endif ! len_trim(wave_drag_file) > 0
   endif ! CS%linear_wave_drag
 
+  ! Initialize streaming band-pass filters and frequency-dependent drag
+  if (CS%use_filter) then
+    call Filt_init(param_file, US, CS%Filt_CS_u, restart_CS)
+    call Filt_init(param_file, US, CS%Filt_CS_v, restart_CS)
+  endif
+
+  if (CS%use_filter .and. CS%linear_freq_drag) then
+    if (.not.CS%linear_wave_drag .and. len_trim(wave_drag_file) > 0) then
+      inputdir = "." ;  call get_param(param_file, mdl, "INPUTDIR", inputdir)
+      wave_drag_file = trim(slasher(inputdir))//trim(wave_drag_file)
+      call log_param(param_file, mdl, "INPUTDIR/BT_WAVE_DRAG_FILE", wave_drag_file)
+    endif
+    call wave_drag_init(param_file, wave_drag_file, G, GV, US, CS%Drag_CS)
+  endif
+
   CS%dtbt_fraction = 0.98 ; if (dtbt_input < 0.0) CS%dtbt_fraction = -dtbt_input
 
-  dtbt_tmp = -1.0
+  dtbt_restart = -1.0
   if (query_initialized(CS%dtbt, "DTBT", restart_CS)) then
-    dtbt_tmp = CS%dtbt
+    dtbt_restart = CS%dtbt
   endif
 
   ! Estimate the maximum stable barotropic time step.
@@ -5035,14 +5134,17 @@ subroutine barotropic_init(u, v, h, eta, Time, G, GV, US, param_file, diag, CS, 
     H_to_Z = GV%H_to_RZ / CS%Rho_BT_lin
     do k=1,GV%ke ; gtot_estimate = gtot_estimate + H_to_Z*GV%g_prime(K) ; enddo
   endif
+
+  ! CS%dtbt calculated here by set_dtbt is only used when dtbt is not reset during the run, i.e. DTBT_RESET_PERIOD<0.
   call set_dtbt(G, GV, US, CS, gtot_est=gtot_estimate, SSH_add=SSH_extra)
 
   if (dtbt_input > 0.0) then
     CS%dtbt = US%s_to_T * dtbt_input
-  elseif (dtbt_tmp > 0.0) then
-    CS%dtbt = dtbt_tmp
+  elseif (dtbt_restart > 0.0) then
+    CS%dtbt = dtbt_restart
   endif
-  if ((dtbt_tmp > 0.0) .and. (dtbt_input > 0.0)) calc_dtbt = .false.
+
+  calc_dtbt = .true. ; if ((dtbt_restart > 0.0) .and. (dtbt_input > 0.0)) calc_dtbt = .false.
 
   call log_param(param_file, mdl, "DTBT as used", CS%dtbt, units="s", unscale=US%T_to_s)
   call log_param(param_file, mdl, "estimated maximum DTBT", CS%dtbt_max, units="s", unscale=US%T_to_s)
@@ -5285,6 +5387,7 @@ subroutine barotropic_end(CS)
 
   if (allocated(CS%frhatu1)) deallocate(CS%frhatu1)
   if (allocated(CS%frhatv1)) deallocate(CS%frhatv1)
+  if (allocated(CS%IareaT_OBCmask)) deallocate(CS%IareaT_OBCmask)
   call deallocate_MOM_domain(CS%BT_domain)
 
   ! Allocated in restart registration, prior to timestep initialization
@@ -5304,9 +5407,8 @@ subroutine register_barotropic_restarts(HI, GV, US, param_file, CS, restart_CS)
   ! Local variables
   type(vardesc) :: vd(3)
   character(len=40)  :: mdl = "MOM_barotropic"  ! This module's name.
+  integer :: n_filters       !< Number of streaming band-pass filters to be used in the simulation.
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
-  real :: am2, ak1      !< Bandwidth parameters of the M2 and K1 streaming filters [nondim]
-  real :: om2, ok1      !< Target frequencies of the M2 and K1 streaming filters [T-1 ~> s-1]
 
   isd = HI%isd ; ied = HI%ied ; jsd = HI%jsd ; jed = HI%jed
   IsdB = HI%IsdB ; IedB = HI%IedB ; JsdB = HI%JsdB ; JedB = HI%JedB
@@ -5318,33 +5420,6 @@ subroutine register_barotropic_restarts(HI, GV, US, param_file, CS, restart_CS)
                  "This is a decent approximation to the inclusion of "//&
                  "sum(u dh_dt) while also correcting for truncation errors.", &
                  default=.false., do_not_log=.true.)
-
-  call get_param(param_file, mdl, "STREAMING_FILTER_M2", CS%use_filter_m2, &
-                 "If true, turn on streaming band-pass filter for detecting "//&
-                 "instantaneous tidal signals.", default=.false.)
-  call get_param(param_file, mdl, "STREAMING_FILTER_K1", CS%use_filter_k1, &
-                 "If true, turn on streaming band-pass filter for detecting "//&
-                 "instantaneous tidal signals.", default=.false.)
-  call get_param(param_file, mdl, "FILTER_ALPHA_M2", am2, &
-                 "Bandwidth parameter of the streaming filter targeting the M2 frequency. "//&
-                 "Must be positive. To turn off filtering, set FILTER_ALPHA_M2 <= 0.0.", &
-                 default=0.0, units="nondim", do_not_log=.not.CS%use_filter_m2)
-  call get_param(param_file, mdl, "FILTER_ALPHA_K1", ak1, &
-                 "Bandwidth parameter of the streaming filter targeting the K1 frequency. "//&
-                 "Must be positive. To turn off filtering, set FILTER_ALPHA_K1 <= 0.0.", &
-                 default=0.0, units="nondim", do_not_log=.not.CS%use_filter_k1)
-  call get_param(param_file, mdl, "TIDE_M2_FREQ", om2, &
-                 "Frequency of the M2 tidal constituent. "//&
-                 "This is only used if TIDES and TIDE_M2"// &
-                 " are true, or if OBC_TIDE_N_CONSTITUENTS > 0 and M2"// &
-                 " is in OBC_TIDE_CONSTITUENTS.", units="s-1", default=tidal_frequency("M2"), &
-                 scale=US%T_to_s, do_not_log=.true.)
-  call get_param(param_file, mdl, "TIDE_K1_FREQ", ok1, &
-                 "Frequency of the K1 tidal constituent. "//&
-                 "This is only used if TIDES and TIDE_K1"// &
-                 " are true, or if OBC_TIDE_N_CONSTITUENTS > 0 and K1"// &
-                 " is in OBC_TIDE_CONSTITUENTS.", units="s-1", default=tidal_frequency("K1"), &
-                 scale=US%T_to_s, do_not_log=.true.)
 
   ALLOC_(CS%ubtav(IsdB:IedB,jsd:jed))      ; CS%ubtav(:,:) = 0.0
   ALLOC_(CS%vbtav(isd:ied,JsdB:JedB))      ; CS%vbtav(:,:) = 0.0
@@ -5374,22 +5449,17 @@ subroutine register_barotropic_restarts(HI, GV, US, param_file, CS, restart_CS)
   call register_restart_field(CS%dtbt, "DTBT", .false., restart_CS, &
                               longname="Barotropic timestep", units="seconds", conversion=US%T_to_s)
 
-  ! Initialize and register streaming filters
-  if (CS%use_filter_m2) then
-    if (am2 > 0.0 .and. om2 > 0.0) then
-      call Filt_register(am2, om2, 'u', HI, CS%Filt_CS_um2)
-      call Filt_register(am2, om2, 'v', HI, CS%Filt_CS_vm2)
-    else
-      CS%use_filter_m2 = .false.
-    endif
-  endif
-  if (CS%use_filter_k1) then
-    if (ak1 > 0.0 .and. ok1 > 0.0) then
-      call Filt_register(ak1, ok1, 'u', HI, CS%Filt_CS_uk1)
-      call Filt_register(ak1, ok1, 'v', HI, CS%Filt_CS_vk1)
-    else
-      CS%use_filter_k1 = .false.
-    endif
+  ! Register streaming band-pass filters
+  call get_param(param_file, mdl, "USE_FILTER", CS%use_filter, &
+                 "If true, use streaming band-pass filters to detect the "//&
+                 "instantaneous tidal signals in the simulation.", default=.false.)
+  call get_param(param_file, mdl, "N_FILTERS", n_filters, &
+                 "Number of streaming band-pass filters to be used in the simulation.", &
+                 default=0, do_not_log=.not.CS%use_filter)
+  if (n_filters<=0) CS%use_filter = .false.
+  if (CS%use_filter) then
+    call Filt_register(n_filters, 'ubt', 'u', HI, CS%Filt_CS_u, restart_CS)
+    call Filt_register(n_filters, 'vbt', 'v', HI, CS%Filt_CS_v, restart_CS)
   endif
 
 end subroutine register_barotropic_restarts

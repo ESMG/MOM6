@@ -97,6 +97,8 @@ type, public :: Kappa_shear_CS ; private
                              !! time average TKE when there is mass in all layers.  Otherwise always
                              !! report the time-averaged TKE, as is currently done when there
                              !! are some massless layers.
+  logical :: VS_viscosity_bug !< If true, use a bug in the calculation of the viscosity that sets
+                             !! it to zero for all vertices that are on a coastline.
   logical :: restrictive_tolerance_check !< If false, uses the less restrictive tolerance check to
                              !! determine if a timestep is acceptable for the KS_it outer iteration
                              !! loop, as the code was originally written.  True uses the more
@@ -607,10 +609,17 @@ subroutine Calc_kappa_shear_vertex(u_in, v_in, h, T_in, S_in, tv, p_surf, kappa_
       enddo
     endif ; enddo ! i-loop
 
-    do K=1,nz+1 ; do I=IsB,IeB
-      tke_io(I,J,K) = G%mask2dBu(I,J) * tke_2d(I,K)
-      kv_io(I,J,K) = ( G%mask2dBu(I,J) * kappa_2d(I,K,J2) ) * CS%Prandtl_turb
-    enddo ; enddo
+    if (CS%VS_viscosity_bug) then
+      do K=1,nz+1 ; do I=IsB,IeB
+        tke_io(I,J,K) = G%mask2dBu(I,J) * tke_2d(I,K)
+        kv_io(I,J,K) = ( G%mask2dBu(I,J) * kappa_2d(I,K,J2) ) * CS%Prandtl_turb
+      enddo; enddo
+    else
+      do K=1,nz+1 ; do I=IsB,IeB
+        tke_io(I,J,K) = tke_2d(I,K)
+        kv_io(I,J,K) = kappa_2d(I,K,J2) * CS%Prandtl_turb
+      enddo; enddo
+    endif
     if (J>=G%jsc) then ; do K=1,nz+1 ; do i=G%isc,G%iec
       ! Set the diffusivities in tracer columns from the values at vertices.
       kappa_io(i,j,K) = G%mask2dT(i,j) * 0.25 * &
@@ -766,7 +775,7 @@ subroutine kappa_shear_column(kappa, tke, dt, nzc, f2, surface_pres, hlay, dz_la
 
   Ri_crit = CS%Rino_crit
   gR0 = GV%H_to_RZ * GV%g_Earth
-  g_R0 = (US%L_to_Z**2 * GV%g_Earth) / GV%Rho0
+  g_R0 = GV%g_Earth_Z_T2 / GV%Rho0
   k0dt = dt*CS%kappa_0
 
   I_lz_rescale_sqr = 1.0; if (CS%lz_rescale > 0) I_lz_rescale_sqr = 1/(CS%lz_rescale*CS%lz_rescale)
@@ -901,19 +910,19 @@ subroutine kappa_shear_column(kappa, tke, dt, nzc, f2, surface_pres, hlay, dz_la
                                     tv%eqn_of_state, (/2,nzc/) )
       call calculate_density(T_int, Sal_int, pressure, rho_int, tv%eqn_of_state, (/2,nzc/) )
       do K=2,nzc
-        dbuoy_dT(K) = (US%L_to_Z**2 * GV%g_Earth) * (rho_int(K) * dSpV_dT(K))
-        dbuoy_dS(K) = (US%L_to_Z**2 * GV%g_Earth) * (rho_int(K) * dSpV_dS(K))
+        dbuoy_dT(K) = GV%g_Earth_Z_T2 * (rho_int(K) * dSpV_dT(K))
+        dbuoy_dS(K) = GV%g_Earth_Z_T2 * (rho_int(K) * dSpV_dS(K))
       enddo
     endif
   elseif (GV%Boussinesq .or. GV%semi_Boussinesq) then
     do K=1,nzc+1 ; dbuoy_dT(K) = -g_R0 ; dbuoy_dS(K) = 0.0 ; enddo
   else
     do K=1,nzc+1 ; dbuoy_dS(K) = 0.0 ; enddo
-    dbuoy_dT(1) = -(US%L_to_Z**2 * GV%g_Earth) / GV%Rlay(1)
+    dbuoy_dT(1) = -GV%g_Earth_Z_T2 / GV%Rlay(1)
     do K=2,nzc
-      dbuoy_dT(K) = -(US%L_to_Z**2 * GV%g_Earth) / (0.5*(GV%Rlay(k-1) + GV%Rlay(k)))
+      dbuoy_dT(K) = -GV%g_Earth_Z_T2 / (0.5*(GV%Rlay(k-1) + GV%Rlay(k)))
     enddo
-    dbuoy_dT(nzc+1) = -(US%L_to_Z**2 * GV%g_Earth) / GV%Rlay(nzc)
+    dbuoy_dT(nzc+1) = -GV%g_Earth_Z_T2 / GV%Rlay(nzc)
   endif
 
   ! N2_debug(1) = 0.0 ; N2_debug(nzc+1) = 0.0
@@ -1873,6 +1882,10 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
                  "If true, do the calculations of the shear-driven mixing "//&
                  "at the cell vertices (i.e., the vorticity points).", &
                  default=.false., do_not_log=just_read)
+  call get_param(param_file, mdl, "VERTEX_SHEAR_VISCOSITY_BUG", CS%VS_viscosity_bug, &
+                 "If true, use a bug in vertex shear that zeros out viscosities at "//&
+                 "vertices on coastlines.", &
+                 default=.true., do_not_log=just_read.or.(.not.CS%KS_at_vertex))
   call get_param(param_file, mdl, "RINO_CRIT", CS%RiNo_crit, &
                  "The critical Richardson number for shear mixing.", &
                  units="nondim", default=0.25, do_not_log=just_read)
@@ -1956,7 +1969,7 @@ function kappa_shear_init(Time, G, GV, US, param_file, diag, CS)
                  default=13, do_not_log=just_read)
   call get_param(param_file, mdl, "PRANDTL_TURB", CS%Prandtl_turb, &
                  "The turbulent Prandtl number applied to shear instability.", &
-                 units="nondim", default=1.0, do_not_log=.true.)
+                 units="nondim", default=1.0, do_not_log=just_read)
   call get_param(param_file, mdl, "VEL_UNDERFLOW", CS%vel_underflow, &
                  "A negligibly small velocity magnitude below which velocity components are set "//&
                  "to 0.  A reasonable value might be 1e-30 m/s, which is less than an "//&
