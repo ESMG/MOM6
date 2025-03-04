@@ -45,8 +45,6 @@ subroutine diagnoseMLDbyDensityDifference(id_MLD, h, tv, densityDiff, G, GV, US,
   real,                    intent(in) :: ref_h_mld   !< Depth of the calculated "surface" densisty [Z ~> m]
   integer,                 intent(in) :: id_ref_z    !< Handle (ID) of reference depth diagnostic
   integer,                 intent(in) :: id_ref_rho  !< Handle (ID) of reference density diagnostic
-  real, dimension(SZI_(G),SZJ_(G)), &
-              optional, intent(inout) :: MLD_out     !< Send MLD to other routines [Z ~> m]
   integer,       optional, intent(in) :: id_N2subML  !< Optional handle (ID) of subML stratification
   integer,       optional, intent(in) :: id_MLDsq    !< Optional handle (ID) of squared MLD
   real,          optional, intent(in) :: dz_subML    !< The distance over which to calculate N2subML
