@@ -128,9 +128,9 @@ function register_Kelvin_OBC(param_file, CS, US, OBC_Reg)
   call register_OBC(casename, param_file, OBC_Reg)
   register_Kelvin_OBC = .true.
 
-! if (CS%mode > 0) call MOM_error(WARNING, &
-!     "register_Kelvin_OBC: The Kelvin_initialization code is not yet working properly unless KELVIN_WAVE_MODE = 0.")
   ! TODO: Revisit and correct the internal Kelvin wave test case.
+  ! Specifically, using wave_speed() and investigating adding eta_anom
+  ! noted in the comments below.
 
 end function register_Kelvin_OBC
 
@@ -309,13 +309,13 @@ subroutine Kelvin_set_OBC_data(OBC, CS, G, GV, US, h, Time)
           ! in MOM_wave_speed() based on the horizontally uniform initial state.
           if (segment%nudged) then
             do k=1,nz
-              segment%nudged_normal_vel(I,j,k) = mag_int * lambda / CS%F_0 * &
+              segment%nudged_normal_vel(I,j,k) = mag_int * &
                    exp(-lambda * y) * cos(PI * CS%mode * (k - 0.5) / nz) * &
                    cos(omega * time_sec)
             enddo
           elseif (segment%specified) then
             do k=1,nz
-              segment%normal_vel(I,j,k) = mag_int * lambda / CS%F_0 * &
+              segment%normal_vel(I,j,k) = mag_int * &
                    exp(-lambda * y) * cos(PI * CS%mode * (k - 0.5) / nz) * &
                    cos(omega * time_sec)
               segment%normal_trans(I,j,k) = segment%normal_vel(I,j,k) * h(i+1,j,k) * G%dyCu(I,j)
@@ -367,12 +367,12 @@ subroutine Kelvin_set_OBC_data(OBC, CS, G, GV, US, h, Time)
           segment%normal_vel_bt(i,J) = 0.0
           if (segment%nudged) then
             do k=1,nz
-              segment%nudged_normal_vel(i,J,k) = mag_int * lambda / CS%F_0 * &
+              segment%nudged_normal_vel(i,J,k) = mag_int * &
                    exp(- lambda * y) * cos(PI * CS%mode * (k - 0.5) / nz) * cosa
             enddo
           elseif (segment%specified) then
             do k=1,nz
-              segment%normal_vel(i,J,k) = mag_int * lambda / CS%F_0 * &
+              segment%normal_vel(i,J,k) = mag_int * &
                    exp(- lambda * y) * cos(PI * CS%mode * (k - 0.5) / nz) * cosa
               segment%normal_trans(i,J,k) = segment%normal_vel(i,J,k) * h(i,j+1,k) * G%dxCv(i,J)
             enddo
