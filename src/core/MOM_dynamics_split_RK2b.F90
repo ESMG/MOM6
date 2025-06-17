@@ -171,7 +171,8 @@ type, public :: MOM_dyn_split_RK2b_CS ; private
                      !! is forward-backward (0) or simulated backward
                      !! Euler (1) [nondim].  0 is often used.
   logical :: debug   !< If true, write verbose checksums for debugging purposes.
-  logical :: debug_OBC !< If true, do debugging calls for open boundary conditions.
+  logical :: debug_OBC !< If true, do additional calls resetting values to help verify the correctness
+                       !! of the open boundary condition code.
   logical :: fpmix = .false.                 !< If true, applies profiles of momentum flux magnitude and direction.
   logical :: module_is_initialized = .false. !< Record whether this module has been initialized.
   logical :: visc_rem_dt_bug = .true. !< If true, recover a bug that uses dt_pred rather than dt for vertvisc_rem
@@ -504,7 +505,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
   if (CS%begw == 0.0) call enable_averages(dt, Time_local, CS%diag)
   call cpu_clock_begin(id_clock_pres)
   call PressureForce(h, tv, CS%PFu, CS%PFv, G, GV, US, CS%PressureForce_CSp, &
-                     CS%ALE_CSp, p_surf, CS%pbce, CS%eta_PF)
+                     CS%ALE_CSp, CS%ADp, p_surf, CS%pbce, CS%eta_PF)
   if (dyn_p_surf) then
     pres_to_eta = 1.0 / (GV%g_Earth * GV%H_to_RZ)
     !$OMP parallel do default(shared)
@@ -827,7 +828,7 @@ subroutine step_MOM_dyn_split_RK2b(u_av, v_av, h, tv, visc, Time_local, dt, forc
     ! pbce = dM/deta
     call cpu_clock_begin(id_clock_pres)
     call PressureForce(hp, tv, CS%PFu, CS%PFv, G, GV, US, CS%PressureForce_CSp, &
-                       CS%ALE_CSp, p_surf, CS%pbce, CS%eta_PF)
+                       CS%ALE_CSp, CS%ADp, p_surf, CS%pbce, CS%eta_PF)
     ! Stokes shear force contribution to pressure gradient
     if (present(Waves)) then ; if (associated(Waves)) then ; if (Waves%Stokes_PGF) then
       call thickness_to_dz(h, tv, dz, G, GV, US, halo_size=1)
@@ -1302,6 +1303,8 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
   character(len=48) :: thickness_units, flux_units, eta_rest_name
   logical :: debug_truncations
   logical :: read_uv, read_h2
+  logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
+                          ! recreate the bugs, or if false bugs are only used if actively selected.
   logical :: visc_rem_bug ! Stores the value of runtime paramter VISC_REM_BUG.
 
   integer :: i, j, k, is, ie, js, je, isd, ied, jsd, jed, nz
@@ -1359,14 +1362,19 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
   call get_param(param_file, mdl, "DEBUG", CS%debug, &
                  "If true, write out verbose debugging data.", &
                  default=.false., debuggingParam=.true.)
-  call get_param(param_file, mdl, "DEBUG_OBC", CS%debug_OBC, default=.false.)
+  call get_param(param_file, mdl, "OBC_DEBUGGING_TESTS", CS%debug_OBC, &
+                 "If true, do additional calls resetting certain values to help verify the "//&
+                 "correctness of the open boundary condition code.", &
+                 default=.false., old_name="DEBUG_OBC", debuggingParam=.true., do_not_log=.true.)
   call get_param(param_file, mdl, "DEBUG_TRUNCATIONS", debug_truncations, &
                  default=.false.)
+  call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+                 default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
   call get_param(param_file, mdl, "VISC_REM_BUG", visc_rem_bug, &
                  "If true, visc_rem_[uv] in split mode is incorrectly calculated or accounted "//&
                  "for in two places. This parameter controls the defaults of two individual "//&
                  "flags, VISC_REM_TIMESTEP_BUG in MOM_dynamics_split_RK2(b) and "//&
-                 "VISC_REM_BT_WEIGHT_BUG in MOM_barotropic.", default=.true.)
+                 "VISC_REM_BT_WEIGHT_BUG in MOM_barotropic.", default=enable_bugs)
   call get_param(param_file, mdl, "VISC_REM_TIMESTEP_BUG", CS%visc_rem_dt_bug, &
                  "If true, recover a bug that uses dt_pred rather than dt in "//&
                  "vertvisc_remnant() at the end of predictor stage for the following "//&
@@ -1434,7 +1442,7 @@ subroutine initialize_dyn_split_RK2b(u, v, h, tv, uh, vh, eta, Time, G, GV, US, 
   else
     HA_CSp => NULL()
   endif
-  call PressureForce_init(Time, G, GV, US, param_file, diag, CS%PressureForce_CSp, &
+  call PressureForce_init(Time, G, GV, US, param_file, diag, CS%PressureForce_CSp, CS%ADp, &
                           CS%SAL_CSp, CS%tides_CSp)
   call hor_visc_init(Time, G, GV, US, param_file, diag, CS%hor_visc, ADp=CS%ADp)
   call vertvisc_init(MIS, Time, G, GV, US, param_file, diag, CS%ADp, dirs, &

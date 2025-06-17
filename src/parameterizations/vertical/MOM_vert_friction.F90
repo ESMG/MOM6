@@ -31,6 +31,8 @@ use MOM_wave_interface, only : wave_parameters_CS
 use MOM_set_visc,      only : set_v_at_u, set_u_at_v
 use MOM_lateral_mixing_coeffs, only : VarMix_CS
 
+use CVMix_kpp,         only : cvmix_kpp_composite_Gshape
+
 implicit none ; private
 
 #include <MOM_memory.h>
@@ -170,9 +172,11 @@ type, public :: vertvisc_CS ; private
   integer :: id_au_vv = -1, id_av_vv = -1, id_au_gl90_vv = -1, id_av_gl90_vv = -1
   integer :: id_du_dt_str = -1, id_dv_dt_str = -1
   integer :: id_h_u = -1, id_h_v = -1, id_hML_u = -1 , id_hML_v = -1
-  integer :: id_FPw2x = -1    !W id_FPhbl_u = -1, id_FPhbl_v = -1
-  integer :: id_tauFP_u = -1, id_tauFP_v = -1  !W,    id_FPtau2x_u = -1, id_FPtau2x_v = -1
-  integer :: id_FPtau2s_u = -1, id_FPtau2s_v = -1, id_FPtau2w_u = -1, id_FPtau2w_v = -1
+  integer :: id_Omega_w2x = -1, id_FPtau2s  = -1 , id_FPtau2w = -1
+  integer :: id_uE_h  = -1, id_vE_h  = -1
+  integer :: id_uStk  = -1, id_vStk  = -1
+  integer :: id_uStk0 = -1, id_vStk0 = -1
+  integer :: id_uInc_h= -1, id_vInc_h= -1
   integer :: id_taux_bot = -1, id_tauy_bot = -1
   integer :: id_Kv_slow = -1, id_Kv_u = -1, id_Kv_v = -1
   integer :: id_Kv_gl90_u = -1, id_Kv_gl90_v = -1
@@ -191,391 +195,221 @@ end type vertvisc_CS
 
 contains
 
-!> Add nonlocal stress increments to u^n (uold) and v^n (vold) using ui and vi.
-subroutine vertFPmix(ui, vi, uold, vold, hbl_h, h, forces, dt, G, GV, US, CS, OBC)
+!> Add nonlocal stress increments to ui^n and vi^n.
+subroutine vertFPmix(ui, vi, uold, vold, hbl_h, h, forces, dt, lpost, Cemp_NL, G, GV, US, CS, OBC, Waves)
   type(ocean_grid_type),   intent(in)    :: G      !< Ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV     !< Ocean vertical grid structure
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), &
                            intent(inout) :: ui     !< Zonal velocity after vertvisc [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), &
-                           intent(inout) :: vi      !< Meridional velocity after vertvisc [L T-1 ~> m s-1]
+                           intent(inout) :: vi     !< Meridional velocity after vertvisc [L T-1 ~> m s-1]
   real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)), &
                            intent(inout) :: uold   !< Old Zonal velocity [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJB_(G),SZK_(GV)), &
                            intent(inout) :: vold   !< Old Meridional velocity [L T-1 ~> m s-1]
   real, dimension(SZI_(G),SZJ_(G)), intent(inout) :: hbl_h !<  boundary layer depth [H ~> m]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                           intent(in) :: h      !< Layer thicknesses [H ~> m or kg m-2]
-  type(mech_forcing),      intent(in) :: forces !< A structure with the driving mechanical forces
-  real,                    intent(in) :: dt     !< Time increment [T ~> s]
-  type(unit_scale_type),   intent(in) :: US     !< A dimensional unit scaling type
-  type(vertvisc_CS),       pointer    :: CS     !< Vertical viscosity control structure
-  type(ocean_OBC_type),    pointer    :: OBC    !< Open boundary condition structure
+                           intent(in) :: h       !< Layer thicknesses [H ~> m or kg m-2]
+  type(mech_forcing),      intent(in) :: forces  !< A structure with the driving mechanical forces
+  real,                    intent(in) :: dt      !< Time increment [T ~> s]
+  real,                    intent(in) :: Cemp_NL !< empirical coefficient of non-local momentum mixing [nondim]
+  logical,                 intent(in) :: lpost   !< Compute and make available FPMix diagnostics
+  type(unit_scale_type),   intent(in) :: US      !< A dimensional unit scaling type
+  type(vertvisc_CS),       pointer    :: CS      !< Vertical viscosity control structure
+  type(ocean_OBC_type),    pointer    :: OBC     !< Open boundary condition structure
+  type(wave_parameters_CS), &
+                   optional, pointer  :: Waves   !< Container for wave/Stokes information
 
   ! local variables
-  real, dimension(SZIB_(G),SZJ_(G))  :: hbl_u   !< boundary layer depth at u-pts [H ~> m]
-  real, dimension(SZI_(G),SZJB_(G))  :: hbl_v   !< boundary layer depth at v-pts [H ~> m]
-  integer, dimension(SZIB_(G),SZJ_(G)) :: kbl_u !< index of the BLD at u-pts     [nondim]
-  integer, dimension(SZI_(G),SZJB_(G)) :: kbl_v !< index of the BLD at v-pts     [nondim]
-  real, dimension(SZIB_(G),SZJ_(G))  :: ustar2_u !< ustar squared at u-pts   [L2 T-2 ~> m2 s-2]
-  real, dimension(SZI_(G),SZJB_(G))  :: ustar2_v !< ustar squared at v-pts   [L2 T-2 ~> m2 s-2]
-  real, dimension(SZIB_(G),SZJ_(G))  :: taux_u   !< zonal wind stress at u-pts  [R L Z T-2 ~> Pa]
-  real, dimension(SZI_(G),SZJB_(G))  :: tauy_v   !< meridional wind stress at v-pts  [R L Z T-2 ~> Pa]
-  !real, dimension(SZIB_(G),SZJ_(G))  :: omega_w2x_u !< angle between wind and x-axis at u-pts [rad]
-  !real, dimension(SZI_(G),SZJB_(G))  :: omega_w2x_v !< angle between wind and y-axis at v-pts [rad]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1) :: tau_u !< kinematic zonal mtm flux at u-pts [L2 T-2 ~> m2 s-2]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1) :: tau_v !< kinematic mer. mtm flux at v-pts [L2 T-2 ~> m2 s-2]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1) :: tauxDG_u !< downgradient zonal mtm flux at u-pts [L2 T-2 ~> m2 s-2]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1) :: tauyDG_u !< downgradient meri mtm flux at u-pts [L2 T-2 ~> m2 s-2]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1) :: tauxDG_v !< downgradient zonal mtm flux at v-pts [L2 T-2 ~> m2 s-2]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1) :: tauyDG_v !< downgradient meri mtm flux at v-pts [L2 T-2 ~> m2 s-2]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1) :: omega_tau2s_u !< angle between mtm flux and vert shear at u-pts [rad]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1) :: omega_tau2s_v !< angle between mtm flux and vert shear at v-pts [rad]
-  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)+1) :: omega_tau2w_u !< angle between mtm flux and wind at u-pts [rad]
-  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)+1) :: omega_tau2w_v !< angle between mtm flux and wind at v-pts [rad]
-
-  real :: pi, Cemp_CG, tmp, cos_tmp, sin_tmp  !< constants and dummy variables [nondim]
-  real :: omega_tmp        !< A dummy angle [radians]
-  real :: du, dv           !< Velocity increments [L T-1 ~> m s-1]
-  real :: depth            !< Cumulative layer thicknesses [H ~> m or kg m-2]
-  real :: sigma            !< Fractional depth in the mixed layer [nondim]
-  real :: Wind_x, Wind_y   !< intermediate wind stress componenents [L2 T-2 ~> m2 s-2]
-  real :: taux, tauy, tauxDG, tauyDG, tauxDGup, tauyDGup, ustar2, tauh !< intermediate variables [L2 T-2 ~> m2 s-2]
-  real :: tauNLup, tauNLdn, tauNL_CG, tauNL_DG, tauNL_X, tauNL_Y, tau_MAG !< intermediate variables [L2 T-2 ~> m2 s-2]
-  real :: omega_w2s, omega_tau2s, omega_s2x, omega_tau2x, omega_tau2w, omega_s2w !< intermediate angles [radians]
-  integer :: kblmin, kbld, kp1, k, nz !< vertical indices
-  integer :: i, j, is, ie, js, je, Isq, Ieq, Jsq, Jeq ! horizontal indices
+  real, dimension(SZIB_(G),SZJ_(G))  :: hbl_u   !< boundary layer depth (u-pts) [H ~> m]
+  real, dimension(SZI_(G),SZJB_(G))  :: hbl_v   !< boundary layer depth (v-pts) [H ~> m]
+  real, dimension(SZIB_(G),SZJ_(G))  :: taux_u  !< kinematic zonal wind stress (u-pts) [L2 T-2 ~> m2 s-2]
+  real, dimension(SZI_(G),SZJB_(G))  :: tauy_v  !< kinematic merid wind stress (v-pts) [L2 T-2 ~> m2 s-2]
+  real, dimension(SZI_(G),SZJ_(G))   :: uS0     !< surface zonal Stokes drift h-pts [L T-1 ~> m s-1]
+  real, dimension(SZI_(G),SZJ_(G))   :: vS0     !< surface zonal Stokes drift h-pts [L T-1 ~> m s-1]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: uE_u    !< zonal Eulerian u-pts [L T-1 ~> m s-1]
+  real, dimension(SZI_(G) ,SZJ_(G),SZK_(GV)) :: uE_h    !< zonal Eulerian h-pts [L T-1 ~> m s-1]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: vE_v    !< merid Eulerian v-pts [L T-1 ~> m s-1]
+  real, dimension(SZI_(G) ,SZJ_(G),SZK_(GV)) :: vE_h    !< merid Eulerian h-pts [L T-1 ~> m s-1]
+  real, dimension(SZIB_(G),SZJ_(G),SZK_(GV)) :: uInc_u  !< zonal Eulerian u-pts [L T-1 ~> m s-1]
+  real, dimension(SZI_(G) ,SZJ_(G),SZK_(GV)) :: uInc_h  !< zonal Eulerian h-pts [L T-1 ~> m s-1]
+  real, dimension(SZI_(G),SZJB_(G),SZK_(GV)) :: vInc_v  !< merid Eulerian v-pts [L T-1 ~> m s-1]
+  real, dimension(SZI_(G) ,SZJ_(G),SZK_(GV)) :: vInc_h  !< merid Eulerian h-pts [L T-1 ~> m s-1]
+  real, dimension(SZI_(G) ,SZJ_(G),SZK_(GV)) :: uStk    !< zonal Stokes Drift (h-pts) [L T-1 ~> m s-1]
+  real, dimension(SZI_(G) ,SZJ_(G),SZK_(GV)) :: vStk    !< merid Stokes Drift (h-pts) [L T-1 ~> m s-1]
+  real, dimension(SZI_(G) ,SZJ_(G),SZK_(GV)+1) :: omega_tau2s !< angle stress to shear (h-pts) [rad]
+  real, dimension(SZI_(G) ,SZJ_(G),SZK_(GV)+1) :: omega_tau2w !< angle stress to wind  (h-pts) [rad]
+  real :: omega_tmp, omega_s2x, omega_tau2x                    !< temporary angle wrt the x axis [rad]
+  real :: Irho0        !< Inverse of the mean density rescaled to [Z L-1 R-1 ~> m3 kg-1]
+  real :: pi           !< ! The ratio of the circumference of a circle to its diameter [nondim]
+  real :: tmp_u, tmp_v !< temporary ocean mask weights on u and v points [nondim]
+  real :: fexp         !< temporary exponential function [nondim]
+  real :: sigma        !< temporary normalize boundary layer coordinate [nondim]
+  real :: Gat1, Gsig, dGdsig !< Shape parameters [nondim]
+  real :: du, dv       !< Intermediate velocity differences [L T-1 ~> m s-1]
+  real :: depth        !< Cumulative of thicknesses [H ~> m]
+  integer :: b, kbld, kp1, k, nz !< band and vertical indices
+  integer :: i, j, is, ie, js, je, Isq, Ieq, Jsq, Jeq !< horizontal indices
 
   is = G%isc ; ie = G%iec; js = G%jsc; je = G%jec
   Isq = G%IscB ; Ieq = G%IecB ; Jsq = G%JscB ; Jeq = G%JecB ; nz = GV%ke
 
   pi = 4. * atan2(1.,1.)
-  Cemp_CG = 3.6
-  kblmin  = 1
-  taux_u(:,:)    = 0.
-  tauy_v(:,:)    = 0.
+  Irho0 = 1.0 / GV%Rho0
 
+  call pass_var(hbl_h , G%Domain, halo=1)
+
+  ! u-points
   do j = js,je
     do I = Isq,Ieq
-      taux_u(I,j)  = forces%taux(I,j) / GV%H_to_RZ    !W rho0=1035.
-    enddo
-  enddo
-
-  do J = Jsq,Jeq
-    do i = is,ie
-      tauy_v(i,J)  = forces%tauy(i,J) / GV%H_to_RZ
-    enddo
-  enddo
-
-  call pass_var( hbl_h      ,G%Domain, halo=1 )
-  call pass_vector(taux_u , tauy_v, G%Domain, To_All )
-  ustar2_u(:,:)  = 0.
-  ustar2_v(:,:)  = 0.
-  hbl_u(:,:)     = 0.
-  hbl_v(:,:)     = 0.
-  kbl_u(:,:)     = 0
-  kbl_v(:,:)     = 0
-  !omega_w2x_u(:,:) = 0.0
-  !omega_w2x_v(:,:) = 0.0
-  tauxDG_u(:,:,:) = 0.0
-  tauyDG_v(:,:,:) = 0.0
-  do j = js,je
-    do I = Isq,Ieq
-      if( (G%mask2dCu(I,j) > 0.5) ) then
-        tmp  = MAX (1.0 ,(G%mask2dT(i,j)             + G%mask2dT(i+1,j)    ) )
-        hbl_u(I,j)   = (G%mask2dT(i,j)*   hbl_h(i,j) + G%mask2dT(i+1,j) *   hbl_h(i+1,j)) /tmp
-        tmp  = MAX(1.0, (G%mask2dCv(i,j) + G%mask2dCv(i,j-1) + G%mask2dCv(i+1,j) + G%mask2dCv(i+1,j-1) ) )
-        tauy = ( G%mask2dCv(i  ,j  )*tauy_v(i  ,j  ) + G%mask2dCv(i  ,j-1)*tauy_v(i  ,j-1) &
-             +   G%mask2dCv(i+1,j  )*tauy_v(i+1,j  ) + G%mask2dCv(i+1,j-1)*tauy_v(i+1,j-1) ) / tmp
-        ustar2_u(I,j) = sqrt( taux_u(I,j)*taux_u(I,j)  + tauy*tauy )
-        !omega_w2x_u(I,j) = atan2( tauy , taux_u(I,j) )
-        tauxDG_u(I,j,1)  = taux_u(I,j)
-        depth = 0.0
-        do k = 1, nz
-          depth = depth + CS%h_u(I,j,k)
-          if( (depth >= hbl_u(I,j)) .and. (kbl_u(I,j) == 0 ) .and. (k > (kblmin-1)) ) then
-            kbl_u(I,j)  = k
-            hbl_u(I,j)  = depth
-          endif
-        enddo
-      endif
-    enddo
-  enddo
-  do J = Jsq,Jeq
-    do i = is,ie
-      if( (G%mask2dCv(i,J) > 0.5) ) then
-        tmp  = max( 1.0 ,(G%mask2dT(i,j) + G%mask2dT(i,j+1)))
-        hbl_v(i,J) = (G%mask2dT(i,j) * hbl_h(i,J) + G%mask2dT(i,j+1) * hbl_h(i,j+1)) /tmp
-        tmp  = max(1.0, (G%mask2dCu(i,j) + G%mask2dCu(i,j+1) + G%mask2dCu(i-1,j) + G%mask2dCu(i-1,j+1)))
-        taux = ( G%mask2dCu(i  ,j) * taux_u(i  ,j) + G%mask2dCu(i  ,j+1) * taux_u(i  ,j+1) &
-             +   G%mask2dCu(i-1,j) * taux_u(i-1,j) + G%mask2dCu(i-1,j+1) * taux_u(i-1,j+1)) / tmp
-        ustar2_v(i,J)  = sqrt(tauy_v(i,J)*tauy_v(i,J) + taux*taux)
-        !omega_w2x_v(i,J) = atan2( tauy_v(i,J), taux )
-        tauyDG_v(i,J,1)  = tauy_v(i,J)
-        depth = 0.0
-        do k = 1, nz
-          depth = depth + CS%h_v(i,J,k)
-          if( (depth >= hbl_v(i,J)) .and. (kbl_v(i,J) == 0) .and. (k > (kblmin-1))) then
-            kbl_v(i,J)  = k
-            hbl_v(i,J)  = depth
-          endif
-        enddo
-      endif
-    enddo
-  enddo
-
-  if (CS%debug) then
-    !### These checksum calls are missing necessary dimensional scaling factors.
-    call uvchksum("surface tau[xy]_[uv] ", taux_u, tauy_v, G%HI, haloshift=1, scalar_pair=.true.)
-    call uvchksum("ustar2", ustar2_u, ustar2_v, G%HI, haloshift=0, scalar_pair=.true.)
-    call uvchksum(" hbl", hbl_u ,   hbl_v , G%HI, haloshift=0, scalar_pair=.true.)
-  endif
-
-  !   Compute downgradient stresses
-  do k = 1, nz
-    kp1 = min( k+1 , nz)
-    do j =  js   ,je
-      do I = Isq  , Ieq
-        tauxDG_u(I,j,k+1) = CS%a_u(I,j,kp1) * (ui(I,j,k) - ui(I,j,kp1))
-      enddo
-    enddo
-    do J = Jsq  , Jeq
-      do i = is  , ie
-        tauyDG_v(i,J,k+1) = CS%a_v(i,J,kp1) * (vi(i,J,k) - vi(i,J,kp1))
-      enddo
-    enddo
-  enddo
-
-  call pass_vector(tauxDG_u, tauyDG_v , G%Domain, To_All)
-  call pass_vector(ui,vi, G%Domain, To_All)
-  tauxDG_v(:,:,:)   = 0.
-  tauyDG_u(:,:,:)   = 0.
-
-  ! Thickness weighted interpolations
-  do k = 1, nz
-    ! v to u points
-    do j = js , je
-      do I = Isq, Ieq
-        tauyDG_u(I,j,k)   = set_v_at_u(tauyDG_v, h, G, GV, I, j, k, G%mask2dCv, OBC)
-      enddo
-    enddo
-    ! u to v points
-    do J = Jsq, Jeq
-      do i = is, ie
-        tauxDG_v(i,J,k)   = set_u_at_v(tauxDG_u, h, G, GV, i, J, k, G%mask2dCu, OBC)
-      enddo
-    enddo
-  enddo
-  if (CS%debug) then
-    call uvchksum(" tauyDG_u tauxDG_v",tauyDG_u,tauxDG_v, G%HI, haloshift=0, scalar_pair=.true.)
-  endif
-
-  ! compute angles, tau2x_[u,v], tau2w_[u,v], tau2s_[u,v], s2w_[u,v] and stress mag tau_[u,v]
-  omega_tau2w_u(:,:,:) = 0.0
-  omega_tau2w_v(:,:,:) = 0.0
-  omega_tau2s_u(:,:,:) = 0.0
-  omega_tau2s_v(:,:,:) = 0.0
-  tau_u(:,:,:)     = 0.0
-  tau_v(:,:,:)     = 0.0
-
-  ! stress magnitude tau_[uv] & direction Omega_tau2(w,s,x)_[uv]
-  do j = js,je
-    do I = Isq,Ieq
-      if( (G%mask2dCu(I,j) > 0.5) ) then
-        ! SURFACE
-        tauyDG_u(I,j,1) = ustar2_u(I,j) !* cos(omega_w2x_u(I,j))
-        tau_u(I,j,1)    = ustar2_u(I,j)
-        Omega_tau2w_u(I,j,1) =  0.0
-        Omega_tau2s_u(I,j,1) =  0.0
-
-        do k=1,nz
-          kp1 = MIN(k+1 , nz)
-          tau_u(I,j,k+1) = sqrt( (tauxDG_u(I,j,k+1)*tauxDG_u(I,j,k+1)) + (tauyDG_u(I,j,k+1)*tauyDG_u(I,j,k+1)) )
-          Omega_tau2x  = atan2( tauyDG_u(I,j,k+1) , tauxDG_u(I,j,k+1) )
-          omega_tmp = Omega_tau2x !- omega_w2x_u(I,j)
-          if ( (omega_tmp  >   pi   ) )  omega_tmp = omega_tmp - 2.*pi
-          if ( (omega_tmp  < (0.-pi)) )  omega_tmp = omega_tmp + 2.*pi
-          Omega_tau2w_u(I,j,k+1)   =     omega_tmp
-          Omega_tau2s_u(I,j,k+1) = 0.0
-        enddo
-      endif
-    enddo
-  enddo
-  do J = Jsq, Jeq
-    do i = is, ie
-      if( (G%mask2dCv(i,J) > 0.5) ) then
-        ! SURFACE
-        tauxDG_v(i,J,1) = ustar2_v(i,J) !* sin(omega_w2x_v(i,J))
-        tau_v(i,J,1)    = ustar2_v(i,J)
-        Omega_tau2w_v(i,J,1)   = 0.0
-        Omega_tau2s_v(i,J,1)   = 0.0
-
-        do k=1,nz-1
-          kp1 = MIN(k+1 , nz)
-          tau_v(i,J,k+1) = sqrt ( (tauxDG_v(i,J,k+1)*tauxDG_v(i,J,k+1)) + (tauyDG_v(i,J,k+1)*tauyDG_v(i,J,k+1)) )
-          omega_tau2x  =  atan2( tauyDG_v(i,J,k+1) , tauxDG_v(i,J,k+1) )
-          omega_tmp  = omega_tau2x !- omega_w2x_v(i,J)
-          if ( (omega_tmp  >   pi   ) )  omega_tmp = omega_tmp - 2.*pi
-          if ( (omega_tmp  < (0.-pi)) )  omega_tmp = omega_tmp + 2.*pi
-          Omega_tau2w_v(i,J,k+1)   =     omega_tmp
-          Omega_tau2s_v(i,J,k+1) = 0.0
-        enddo
-      endif
-    enddo
-  enddo
-
-  ! Parameterized stress orientation from the wind at interfaces (tau2x)
-  ! and centers (tau2x) OVERWRITE to kbl-interface above hbl
-  do j = js,je
-    do I = Isq,Ieq
-      if( (G%mask2dCu(I,j) > 0.5) ) then
-        kbld  = min( (kbl_u(I,j)) , (nz-2) )
-        if ( tau_u(I,j,kbld+2) > tau_u(I,j,kbld+1) ) kbld = kbld + 1
-
-        !### This expression is dimensionally inconsistent.
-        tauh  =  tau_u(I,j,kbld+1) + GV%H_subroundoff
-        ! surface boundary conditions
+      taux_u(I,j)  = forces%taux(I,j) * Irho0
+      if ( (G%mask2dCu(I,j) > 0.5) ) then
+        ! h to u-pts
+        tmp_u  = MAX (1.0 ,(G%mask2dT(i,j) + G%mask2dT(i+1,j) ) )
+        hbl_u(I,j) = ((G%mask2dT(i,j) * hbl_h(i,j)) + (G%mask2dT(i+1,j) * hbl_h(i+1,j))) / tmp_u
         depth   = 0.
-        tauNLup = 0.0
-        do k=1, kbld
-          depth = depth + CS%h_u(I,j,k)
-          sigma  = min( 1.0 , depth / hbl_u(i,j) )
-
-          ! linear stress mag
-          tau_MAG   = (ustar2_u(I,j) * (1.-sigma) )  + (tauh * sigma )
-          !### The following expressions are dimensionally inconsistent.
-          cos_tmp   = tauxDG_u(I,j,k+1) / (tau_u(I,j,k+1) + GV%H_subroundoff)
-          sin_tmp   = tauyDG_u(I,j,k+1) / (tau_u(I,j,k+1) + GV%H_subroundoff)
-
-          ! rotate to wind coordinates
-          Wind_x    = ustar2_u(I,j) !* cos(omega_w2x_u(I,j))
-          Wind_y    = ustar2_u(I,j) !* sin(omega_w2x_u(I,j))
-          tauNL_DG  = (Wind_x * cos_tmp + Wind_y * sin_tmp)
-          tauNL_CG  = (Wind_y * cos_tmp - Wind_x * sin_tmp)
-          omega_w2s = atan2(tauNL_CG, tauNL_DG)
-          omega_s2w = 0.0-omega_w2s
-          tauNL_CG  = Cemp_CG * G_sig(sigma) * tauNL_CG
-          tau_MAG   = max(tau_MAG, tauNL_CG)
-          tauNL_DG  = sqrt(tau_MAG*tau_MAG - tauNL_CG*tauNL_CG) - tau_u(I,j,k+1)
-
-          ! back to x,y coordinates
-          tauNL_X  = (tauNL_DG * cos_tmp - tauNL_CG * sin_tmp)
-          tauNL_Y  = (tauNL_DG * sin_tmp + tauNL_CG * cos_tmp)
-          tauNLdn  = tauNL_X
-
-          ! nonlocal increment and update to uold
-          !### The following expression is dimensionally inconsistent and missing parentheses.
-          du = (tauNLup - tauNLdn) * (dt/CS%h_u(I,j,k) + GV%H_subroundoff)
-          ui(I,j,k)    = uold(I,j,k)  + du
-          uold(I,j,k)  = du
-          tauNLup      = tauNLdn
-
-          ! diagnostics
-          Omega_tau2s_u(I,j,k+1) = atan2(tauNL_CG  , (tau_u(I,j,k+1)+tauNL_DG))
-          tau_u(I,j,k+1)         = sqrt(((tauxDG_u(I,j,k+1) + tauNL_X)**2) + ((tauyDG_u(I,j,k+1) + tauNL_Y)**2))
-          omega_tau2x            = atan2((tauyDG_u(I,j,k+1) + tauNL_Y), (tauxDG_u(I,j,k+1) + tauNL_X))
-          omega_tau2w            = omega_tau2x !-  omega_w2x_u(I,j)
-          if (omega_tau2w >= pi ) omega_tau2w = omega_tau2w - 2.*pi
-          if (omega_tau2w <= (0.-pi) )  omega_tau2w = omega_tau2w + 2.*pi
-          Omega_tau2w_u(I,j,k+1) = omega_tau2w
+        Gat1  = 0.
+        do k=1, nz
+          ! cell center
+          depth = depth + 0.5*CS%h_u(I,j,k)
+          uE_u(I,j,k) = ui(I,j,k) - waves%Us_x(I,j,k)
+          if ( depth < hbl_u(I,j) )     then
+            sigma = depth / hbl_u(i,j)
+            ! cell bottom
+            depth = depth + 0.5*CS%h_u(I,j,k)
+            call cvmix_kpp_composite_Gshape(sigma,Gat1,Gsig,dGdsig)
+            ! nonlocal boundary-layer increment
+            uInc_u(I,j,k)  = dt * Cemp_NL * taux_u(I,j) * dGdsig / hbl_u(I,j)
+            ui(I,j,k) = ui(I,j,k) + uInc_u(I,j,k)
+          else
+            uInc_u(I,j,k) = 0.0
+          endif
         enddo
-        do k= kbld+1, nz
-          ui(I,j,k)  = uold(I,j,k)
-          uold(I,j,k)  = 0.0
+      else
+        do k=1, nz
+          uInc_u(I,j,k) = 0.0
         enddo
       endif
     enddo
   enddo
 
-  ! v-point dv increment
+  ! v-points
   do J = Jsq,Jeq
     do i = is,ie
-      if( (G%mask2dCv(i,J) > 0.5) ) then
-        kbld  = min((kbl_v(i,J)), (nz-2))
-        if (tau_v(i,J,kbld+2) > tau_v(i,J,kbld+1)) kbld = kbld + 1
-        tauh  = tau_v(i,J,kbld+1)
-
-        !surface boundary conditions
+      tauy_v(i,J)  = forces%tauy(i,J) * Irho0
+      if ( (G%mask2dCv(i,J) > 0.5) ) then
+        ! h to v-pts
+        tmp_v  = max( 1.0 ,(G%mask2dT(i,j) + G%mask2dT(i,j+1)))
+        hbl_v(i,J) = (G%mask2dT(i,j) * hbl_h(i,J) + G%mask2dT(i,j+1) * hbl_h(i,j+1)) / tmp_v
         depth = 0.
-        tauNLup = 0.0
-        do k=1, kbld
-          depth = depth + CS%h_v(i,J,k)
-          sigma  = min(1.0, depth/ hbl_v(I,J))
-
-          ! linear stress
-          tau_MAG   = (ustar2_v(i,J) * (1.-sigma))  + (tauh * sigma)
-          !### The following expressions are dimensionally inconsistent.
-          cos_tmp   = tauxDG_v(i,J,k+1) / (tau_v(i,J,k+1)  + GV%H_subroundoff)
-          sin_tmp   = tauyDG_v(i,J,k+1) / (tau_v(i,J,k+1)  + GV%H_subroundoff)
-
-          ! rotate into wind coordinate
-          Wind_x    = ustar2_v(i,J) !* cos(omega_w2x_v(i,J))
-          Wind_y    = ustar2_v(i,J) !* sin(omega_w2x_v(i,J))
-          tauNL_DG  = (Wind_x * cos_tmp + Wind_y * sin_tmp)
-          tauNL_CG  = (Wind_y * cos_tmp - Wind_x * sin_tmp)
-          omega_w2s = atan2(tauNL_CG , tauNL_DG)
-          omega_s2w = 0.0 - omega_w2s
-          tauNL_CG  = Cemp_CG * G_sig(sigma) * tauNL_CG
-          tau_MAG   = max( tau_MAG , tauNL_CG )
-          tauNL_DG  = 0.0 - tau_v(i,J,k+1) + sqrt(tau_MAG*tau_MAG - tauNL_CG*tauNL_CG)
-
-          ! back to x,y coordinate
-          tauNL_X  = (tauNL_DG * cos_tmp - tauNL_CG * sin_tmp)
-          tauNL_Y  = (tauNL_DG * sin_tmp + tauNL_CG * cos_tmp)
-          tauNLdn  = tauNL_Y
-          !### The following expression is dimensionally inconsistent, [L T-1] vs. [L2 H-1 T-1] on the right,
-          !    and it is inconsistent with the counterpart expression for du.
-          dv            = (tauNLup - tauNLdn) * (dt/(CS%h_v(i,J,k)) )
-          vi(i,J,k)    = vold(i,J,k) + dv
-          vold(i,J,k)  = dv
-          tauNLup       = tauNLdn
-
-          ! diagnostics
-          Omega_tau2s_v(i,J,k+1) = atan2(tauNL_CG, tau_v(i,J,k+1) + tauNL_DG)
-          tau_v(i,J,k+1)         = sqrt(((tauxDG_v(i,J,k+1) + tauNL_X)**2) + ((tauyDG_v(i,J,k+1) + tauNL_Y)**2))
-          !omega_tau2x            = atan2((tauyDG_v(i,J,k+1) + tauNL_Y) , (tauxDG_v(i,J,k+1) + tauNL_X))
-          !omega_tau2w            = omega_tau2x - omega_w2x_v(i,J)
-          if (omega_tau2w > pi)  omega_tau2w = omega_tau2w - 2.*pi
-          if (omega_tau2w .le. (0.-pi) )  omega_tau2w = omega_tau2w + 2.*pi
-          Omega_tau2w_v(i,J,k+1) = omega_tau2w
+        Gat1  = 0.
+        do k=1, nz
+          ! cell center
+          depth = depth + 0.5* CS%h_v(i,J,k)
+          vE_v(i,J,k) = vi(i,J,k) - waves%Us_y(i,J,k)
+          if ( depth < hbl_v(i,J) )    then
+            sigma = depth / hbl_v(i,J)
+            ! cell bottom
+            depth = depth + 0.5* CS%h_v(i,J,k)
+            call cvmix_kpp_composite_Gshape(sigma,Gat1,Gsig,dGdsig)
+            ! nonlocal boundary-layer increment
+            vInc_v(i,J,k) = dt * Cemp_NL * tauy_v(i,J) * dGdsig / hbl_v(i,J)
+            vi(i,J,k) = vi(i,J,k) + vInc_v(i,J,k)
+          else
+            vInc_v(i,J,k)  = 0.0
+          endif
         enddo
-
-        do k= kbld+1, nz
-          vi(i,J,k)    = vold(i,J,k)
-          vold(i,J,k)  = 0.0
+      else
+        do k=1, nz
+          vInc_v(i,J,k)  = 0.0
         enddo
       endif
     enddo
   enddo
 
-  if (CS%debug) then
-    call uvchksum("FP-tau_[uv]  ", tau_u, tau_v, G%HI, haloshift=0, scalar_pair=.true.)
-  endif
+  ! Compute and store diagnostics, only during the corrector step.
+  if (lpost)  then
+    call pass_vector(uE_u  ,  vE_v  , G%Domain, To_All)
+    call pass_vector(uInc_u, vInc_v , G%Domain, To_All)
+    uStk = 0.0
+    vStk = 0.0
+    uS0  = 0.0
+    vS0  = 0.0
 
-  if (CS%id_tauFP_u > 0)   call post_data(CS%id_tauFP_u, tau_u, CS%diag)
-  if (CS%id_tauFP_v > 0)   call post_data(CS%id_tauFP_v, tau_v, CS%diag)
-  if (CS%id_FPtau2s_u > 0) call post_data(CS%id_FPtau2s_u, omega_tau2s_u, CS%diag)
-  if (CS%id_FPtau2s_v > 0) call post_data(CS%id_FPtau2s_v, omega_tau2s_v, CS%diag)
-  if (CS%id_FPtau2w_u > 0) call post_data(CS%id_FPtau2w_u, omega_tau2w_u, CS%diag)
-  if (CS%id_FPtau2w_v > 0) call post_data(CS%id_FPtau2w_v, omega_tau2w_v, CS%diag)
-  !if (CS%id_FPw2x   > 0)   call post_data(CS%id_FPw2x, forces%omega_w2x , CS%diag)
+    do j = js,je
+      do i = is,ie
+        if (G%mask2dT(i,j) > 0.5)  then
+          ! u to h-pts
+          tmp_u  = max( 1.0 ,(G%mask2dCu(i,j) + G%mask2dCu(i-1,j)))
+          ! v to h-pts
+          tmp_v  = max( 1.0 ,(G%mask2dCv(i,j) + G%mask2dCv(i,j-1)))
+          do k = 1,nz
+            uE_h(i,j,k)   = (G%mask2dCu(i,j) *   uE_u(i,j,k) + G%mask2dCu(i-1,j) *   uE_u(i-1,j,k)) / tmp_u
+            uInc_h(i,j,k) = (G%mask2dCu(i,j) * uInc_u(i,j,k) + G%mask2dCu(i-1,j) * uInc_u(i-1,j,k)) / tmp_u
+            vE_h(i,j,k)   = (G%mask2dCv(i,j) *   vE_v(i,j,k) + G%mask2dCv(i,j-1) *   vE_v(i,j-1,k)) / tmp_v
+            vInc_h(i,j,k) = (G%mask2dCv(i,j) * vInc_v(i,j,k) + G%mask2dCv(i,j-1) * vInc_v(i,j-1,k)) / tmp_v
+          enddo
+          ! Wind, Stress and Shear align at surface
+          Omega_tau2w(i,j,1) = 0.0
+          Omega_tau2s(i,j,1) = 0.0
+          do k = 1,nz
+            kp1 = min( nz , k+1)
+            du = uE_h(i,j,k) - uE_h(i,j,kp1)
+            dv = vE_h(i,j,k) - vE_h(i,j,kp1)
+            omega_s2x = atan2( dv , du )
+
+            du = du + uInc_h(i,j,k) - uInc_h(i,j,kp1)
+            dv = dv + vInc_h(i,j,k) - vInc_h(i,j,kp1)
+            omega_tau2x = atan2( dv , du )
+
+            omega_tmp = omega_tau2x - forces%omega_w2x(i,j)
+            if ( (omega_tmp  >   pi   ) )  omega_tmp = omega_tmp - 2.*pi
+            if ( (omega_tmp  < (0.-pi)) )  omega_tmp = omega_tmp + 2.*pi
+            Omega_tau2w(i,j,kp1) = omega_tmp
+
+            omega_tmp = omega_tau2x - omega_s2x
+            if ( (omega_tmp  >   pi   ) )  omega_tmp = omega_tmp - 2.*pi
+            if ( (omega_tmp  < (0.-pi)) )  omega_tmp = omega_tmp + 2.*pi
+            Omega_tau2s(i,j,kp1) = omega_tmp
+
+          enddo
+        endif
+
+        ! Stokes drift
+        do b=1,waves%NumBands
+          uS0(i,j)  = uS0(i,j) + waves%UStk_Hb(i,j,b)    ! or forces%UStkb(i,j,b)
+          vS0(i,j)  = vS0(i,j) + waves%VStk_Hb(i,j,b)    ! or forces%VStkb(i,j,b)
+        enddo
+        depth = 0.0
+        do k = 1,nz
+          do b  = 1, waves%NumBands
+            ! cell center
+            fexp = exp(-2. * waves%WaveNum_Cen(b) * (depth+0.5*h(i,j,k)) )
+            uStk(i,j,k) = uStk(i,j,k) + waves%UStk_Hb(i,j,b) * fexp
+            vStk(i,j,k) = vStk(i,j,k) + waves%VStk_Hb(i,j,b) * fexp
+          enddo
+          ! cell bottom
+          depth = depth + h(i,j,k)
+        enddo
+      enddo
+    enddo
+
+    ! post FPmix diagnostics
+    if (CS%id_uE_h    > 0) call post_data(CS%id_uE_h     , uE_h   , CS%diag)
+    if (CS%id_vE_h    > 0) call post_data(CS%id_vE_h   , vE_h   , CS%diag)
+    if (CS%id_uInc_h  > 0) call post_data(CS%id_uInc_h , uInc_h , CS%diag)
+    if (CS%id_vInc_h  > 0) call post_data(CS%id_vInc_h , vInc_h , CS%diag)
+    if (CS%id_FPtau2s > 0) call post_data(CS%id_FPtau2s, Omega_tau2s, CS%diag)
+    if (CS%id_FPtau2w > 0) call post_data(CS%id_FPtau2w, Omega_tau2w, CS%diag)
+    if (CS%id_uStk0   > 0) call post_data(CS%id_uStk0  , uS0 , CS%diag)
+    if (CS%id_vStk0   > 0) call post_data(CS%id_vStk0  , vS0    , CS%diag)
+    if (CS%id_uStk    > 0) call post_data(CS%id_uStk   , uStk   , CS%diag)
+    if (CS%id_vStk    > 0) call post_data(CS%id_vStk   , vStk   , CS%diag)
+    if (CS%id_Omega_w2x > 0) call post_data(CS%id_Omega_w2x, forces%omega_w2x, CS%diag)
+
+  endif
 
 end subroutine vertFPmix
-
-!> Returns the empirical shape-function given sigma [nondim]
-real function G_sig(sigma)
-  real , intent(in) :: sigma    !< Normalized boundary layer depth [nondim]
-
-  ! local variables
-  real :: p1, c2, c3  !< Parameters used to fit and match empirical shape-functions [nondim]
-
-  ! parabola
-  p1 = 0.287
-  ! cubic function
-  c2 = 1.74392
-  c3 = 2.58538
-  G_sig  = min( p1 * (1.-sigma)*(1.-sigma) , sigma * (1. + sigma * (c2*sigma - c3) ) )
-end function G_sig
 
 !> Compute coupling coefficient associated with vertical viscosity parameterization as in Greatbatch and Lamb
 !! (1990), hereafter referred to as the GL90 vertical viscosity parameterization. This vertical viscosity scheme
@@ -688,6 +522,7 @@ subroutine find_coupling_coef_gl90(a_cpl_gl90, hvel, do_i, z_i, j, G, GV, CS, Va
 
 end subroutine find_coupling_coef_gl90
 
+
 !> Perform a fully implicit vertical diffusion
 !! of momentum.  Stress top and bottom boundary conditions are used.
 !!
@@ -701,9 +536,8 @@ end subroutine find_coupling_coef_gl90
 !! $r_k$ is a Rayleigh drag term due to channel drag.
 !! There is an additional stress term on the right-hand side
 !! if DIRECT_STRESS is true, applied to the surface layer.
-
 subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
-                    taux_bot, tauy_bot, Waves)
+                    taux_bot, tauy_bot, fpmix, Waves)
   type(ocean_grid_type),   intent(in)    :: G      !< Ocean grid structure
   type(verticalGrid_type), intent(in)    :: GV     !< Ocean vertical grid structure
   type(unit_scale_type),   intent(in)    :: US     !< A dimensional unit scaling type
@@ -727,6 +561,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   real, dimension(SZI_(G),SZJB_(G)), &
                    optional, intent(out) :: tauy_bot !< Meridional bottom stress from ocean to
                                                      !! rock [R L Z T-2 ~> Pa]
+  logical,         optional, intent(in)  :: fpmix !< fpmix along Eulerian shear
   type(wave_parameters_CS), &
                    optional, pointer     :: Waves !< Container for wave/Stokes information
 
@@ -736,10 +571,14 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
 
   ! Local variables
 
-  real :: b1(SZIB_(G))           ! A variable used by the tridiagonal solver [H-1 ~> m-1 or m2 kg-1].
-  real :: c1(SZIB_(G),SZK_(GV))  ! A variable used by the tridiagonal solver [nondim].
-  real :: d1(SZIB_(G))           ! d1=1-c1 is used by the tridiagonal solver [nondim].
-  real :: Ray(SZIB_(G),SZK_(GV)) ! Ray is the Rayleigh-drag velocity [H T-1 ~> m s-1 or Pa s m-1]
+  real :: b1(SZIB_(G), SZJB_(G))
+    ! A variable used by the tridiagonal solver [H-1 ~> m-1 or m2 kg-1].
+  real :: c1(SZIB_(G), SZJB_(G), SZK_(GV))
+    ! A variable used by the tridiagonal solver [nondim].
+  real :: d1(SZIB_(G), SZJB_(G))
+    ! d1=1-c1 is used by the tridiagonal solver [nondim].
+  real :: Ray(SZIB_(G), SZJB_(G))
+    ! Ray is the Rayleigh-drag velocity [H T-1 ~> m s-1 or Pa s m-1]
   real :: b_denom_1              ! The first term in the denominator of b1 [H ~> m or kg m-2].
 
   real :: Hmix             ! The mixed layer thickness over which stress
@@ -756,8 +595,9 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
                            ! than this are diagnosed as 0 [L T-2 ~> m s-2].
   real :: zDS, h_a         ! Temporary thickness variables used with direct_stress [H ~> m or kg m-2]
   real :: hfr              ! Temporary ratio of thicknesses used with direct_stress [nondim]
-  real :: surface_stress(SZIB_(G))! The same as stress, unless the wind stress
-                           ! stress is applied as a body force [H L T-1 ~> m2 s-1 or kg m-1 s-1].
+  real :: surface_stress(SZIB_(G), SZJB_(G))
+    ! The same as stress, unless the wind stress is applied as a body force
+    ! [H L T-1 ~> m2 s-1 or kg m-1 s-1].
   real, allocatable, dimension(:,:,:) :: KE_term ! A term in the kinetic energy budget
                                                  ! [H L2 T-3 ~> m3 s-3 or W m-2]
   real, allocatable, dimension(:,:,:) :: KE_u ! The area integral of a KE term in a layer at u-points
@@ -765,8 +605,8 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
   real, allocatable, dimension(:,:,:) :: KE_v ! The area integral of a KE term in a layer at v-points
                                               ! [H L4 T-3 ~> m5 s-3 or kg m2 s-3]
 
-  logical :: do_i(SZIB_(G))
   logical :: DoStokesMixing
+  logical :: lfpmix
 
   integer :: i, j, k, is, ie, js, je, Isq, Ieq, Jsq, Jeq, nz, n
   is = G%isc ; ie = G%iec; js = G%jsc; je = G%jec
@@ -804,324 +644,473 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
       call MOM_error(FATAL,"Stokes Mixing called without allocated"//&
                      "Waves Control Structure")
   endif
-
-  do k=1,nz ; do i=Isq,Ieq ; Ray(i,k) = 0.0 ; enddo ; enddo
+  lfpmix = .false.
+  if ( present(fpmix) ) lfpmix = fpmix
 
   !   Update the zonal velocity component using a modification of a standard
   ! tridagonal solver.
 
-  !$OMP parallel do default(shared) firstprivate(Ray) &
-  !$OMP                 private(do_i,surface_stress,zDS,stress,h_a,hfr, &
-  !$OMP                         b_denom_1,b1,d1,c1)
-  do j=G%jsc,G%jec
-    do I=Isq,Ieq ; do_i(I) = (G%mask2dCu(I,j) > 0.0) ; enddo
+  ! WGL: Brandon Reichl says the following is obsolete. u(I,j,k) already
+  ! includes Stokes.
+  ! When mixing down Eulerian current + Stokes drift add before calling solver
+  if (DoStokesMixing) then
+    do k=1,nz ; do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      u(I,j,k) = u(I,j,k) + Waves%Us_x(I,j,k)
+    endif ; enddo ; enddo ; enddo
+  endif
 
-    ! When mixing down Eulerian current + Stokes drift add before calling solver
-    if (DoStokesMixing) then ; do k=1,nz ; do I=Isq,Ieq
-      if (do_i(I)) u(I,j,k) = u(I,j,k) + Waves%Us_x(I,j,k)
-    enddo ; enddo ; endif
+  if (lfpmix) then
+    do k=1,nz ; do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      u(I,j,k) = u(I,j,k) - Waves%Us_x(I,j,k)
+    endif ; enddo ; enddo ; enddo
+  endif
 
-    if (associated(ADp%du_dt_visc)) then ; do k=1,nz ; do I=Isq,Ieq
+  if (associated(ADp%du_dt_visc)) then
+    do k=1,nz ; do j=G%jsc,G%jec ; do I=Isq,Ieq
       ADp%du_dt_visc(I,j,k) = u(I,j,k)
-    enddo ; enddo ; endif
-    if (associated(ADp%du_dt_visc_gl90)) then ; do k=1,nz ; do I=Isq,Ieq
+    enddo ; enddo; enddo
+  endif
+
+  if (associated(ADp%du_dt_visc_gl90)) then
+    do k=1,nz ; do j=G%jsc,G%jec ; do I=Isq,Ieq
       ADp%du_dt_visc_gl90(I,j,k) = u(I,j,k)
-    enddo ; enddo ; endif
-    if (associated(ADp%du_dt_str)) then ; do k=1,nz ; do I=Isq,Ieq
+    enddo ; enddo ; enddo
+  endif
+
+  if (associated(ADp%du_dt_str)) then
+    do k=1,nz ; do j=G%jsc,G%jec ; do I=Isq,Ieq
       ADp%du_dt_str(I,j,k) = 0.0
-    enddo ; enddo ; endif
+    enddo ; enddo ; enddo
+  endif
 
-    !   One option is to have the wind stress applied as a body force
-    ! over the topmost Hmix fluid.  If DIRECT_STRESS is not defined,
-    ! the wind stress is applied as a stress boundary condition.
-    if (CS%direct_stress) then
-      do I=Isq,Ieq ; if (do_i(I)) then
-        surface_stress(I) = 0.0
-        zDS = 0.0
-        stress = dt_Rho0 * forces%taux(I,j)
-        do k=1,nz
-          h_a = 0.5 * (h(i,j,k) + h(i+1,j,k)) + h_neglect
-          hfr = 1.0 ; if ((zDS+h_a) > Hmix) hfr = (Hmix - zDS) / h_a
-          u(I,j,k) = u(I,j,k) + I_Hmix * hfr * stress
-          if (associated(ADp%du_dt_str)) ADp%du_dt_str(i,J,k) = (I_Hmix * hfr * stress) * Idt
-          zDS = zDS + h_a ; if (zDS >= Hmix) exit
-        enddo
-      endif ; enddo ! end of i loop
-    else ; do I=Isq,Ieq
-      surface_stress(I) = dt_Rho0 * (G%mask2dCu(I,j)*forces%taux(I,j))
-    enddo ; endif ! direct_stress
-
-    if (allocated(visc%Ray_u)) then ; do k=1,nz ; do I=Isq,Ieq
-      Ray(I,k) = visc%Ray_u(I,j,k)
-    enddo ; enddo ; endif
-
-    ! perform forward elimination on the tridiagonal system
-    !
-    ! denote the diagonal of the system as b_k, the subdiagonal as a_k
-    ! and the superdiagonal as c_k. The right-hand side terms are d_k.
-    !
-    ! ignoring the Rayleigh drag contribution,
-    ! we have a_k = -dt * a_u(k)
-    !         b_k = h_u(k) + dt * (a_u(k) + a_u(k+1))
-    !         c_k = -dt * a_u(k+1)
-    !
-    ! for forward elimination, we want to:
-    ! calculate c'_k = - c_k                / (b_k + a_k c'_(k-1))
-    ! and       d'_k = (d_k - a_k d'_(k-1)) / (b_k + a_k c'_(k-1))
-    ! where c'_1 = c_1/b_1 and d'_1 = d_1/b_1
-    !
-    ! This form is mathematically equivalent to Thomas' tridiagonal matrix algorithm, but it
-    ! does not suffer from the acute sensitivity to truncation errors of the Thomas algorithm
-    ! because it involves no subtraction, as discussed by Schopf & Loughe, MWR, 1995.
-    !
-    ! b1 is the denominator term 1 / (b_k + a_k c'_(k-1))
-    ! b_denom_1 is (b_k + a_k + c_k) - a_k(1 - c'_(k-1))
-    !            = (b_k + c_k + c'_(k-1))
-    ! this is done so that d1 = b1 * b_denom_1 = 1 - c'_(k-1)
-    ! c1(k) is -c'_(k - 1)
-    ! and the right-hand-side is destructively updated to be d'_k
-    !
-    do I=Isq,Ieq ; if (do_i(I)) then
-      b_denom_1 = CS%h_u(I,j,1) + dt * (Ray(I,1) + CS%a_u(I,j,1))
-      b1(I) = 1.0 / (b_denom_1 + dt*CS%a_u(I,j,2))
-      d1(I) = b_denom_1 * b1(I)
-      u(I,j,1) = b1(I) * (CS%h_u(I,j,1) * u(I,j,1) + surface_stress(I))
-      if (associated(ADp%du_dt_str)) &
-        ADp%du_dt_str(I,j,1) = b1(I) * (CS%h_u(I,j,1) * ADp%du_dt_str(I,j,1) + surface_stress(I)*Idt)
-    endif ; enddo
-    do k=2,nz ; do I=Isq,Ieq ; if (do_i(I)) then
-      c1(I,k) = dt * CS%a_u(I,j,K) * b1(I)
-      b_denom_1 = CS%h_u(I,j,k) + dt * (Ray(I,k) + CS%a_u(I,j,K)*d1(I))
-      b1(I) = 1.0 / (b_denom_1 + dt * CS%a_u(I,j,K+1))
-      d1(I) = b_denom_1 * b1(I)
-      u(I,j,k) = (CS%h_u(I,j,k) * u(I,j,k) + &
-                  dt * CS%a_u(I,j,K) * u(I,j,k-1)) * b1(I)
-      if (associated(ADp%du_dt_str)) &
-        ADp%du_dt_str(I,j,k) = (CS%h_u(I,j,k) * ADp%du_dt_str(I,j,k) + &
-                                dt * CS%a_u(I,j,K) * ADp%du_dt_str(I,j,k-1)) * b1(I)
+  !   One option is to have the wind stress applied as a body force
+  ! over the topmost Hmix fluid.  If DIRECT_STRESS is not defined,
+  ! the wind stress is applied as a stress boundary condition.
+  if (CS%direct_stress) then
+    do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      surface_stress(I,j) = 0.0
+      zDS = 0.0
+      stress = dt_Rho0 * forces%taux(I,j)
+      do k=1,nz
+        h_a = 0.5 * (h(i,j,k) + h(i+1,j,k)) + h_neglect
+        hfr = 1.0 ; if ((zDS+h_a) > Hmix) hfr = (Hmix - zDS) / h_a
+        u(I,j,k) = u(I,j,k) + I_Hmix * hfr * stress
+        if (associated(ADp%du_dt_str)) ADp%du_dt_str(i,J,k) = (I_Hmix * hfr * stress) * Idt
+        zDS = zDS + h_a ; if (zDS >= Hmix) exit
+      enddo
     endif ; enddo ; enddo
+  else
+    do j=G%jsc,G%jec ; do I=Isq,Ieq
+      surface_stress(I,j) = dt_Rho0 * (G%mask2dCu(I,j)*forces%taux(I,j))
+    enddo ; enddo
+  endif
 
-    ! back substitute to solve for the new velocities
-    ! u_k = d'_k - c'_k x_(k+1)
-    do k=nz-1,1,-1 ; do I=Isq,Ieq ; if (do_i(I)) then
-      u(I,j,k) = u(I,j,k) + c1(I,k+1) * u(I,j,k+1)
-    endif ; enddo ; enddo ! i and k loops
+  ! perform forward elimination on the tridiagonal system
+  !
+  ! denote the diagonal of the system as b_k, the subdiagonal as a_k
+  ! and the superdiagonal as c_k. The right-hand side terms are d_k.
+  !
+  ! ignoring the Rayleigh drag contribution,
+  ! we have a_k = -dt * a_u(k)
+  !         b_k = h_u(k) + dt * (a_u(k) + a_u(k+1))
+  !         c_k = -dt * a_u(k+1)
+  !
+  ! for forward elimination, we want to:
+  ! calculate c'_k = - c_k                / (b_k + a_k c'_(k-1))
+  ! and       d'_k = (d_k - a_k d'_(k-1)) / (b_k + a_k c'_(k-1))
+  ! where c'_1 = c_1/b_1 and d'_1 = d_1/b_1
+  !
+  ! This form is mathematically equivalent to Thomas' tridiagonal matrix algorithm, but it
+  ! does not suffer from the acute sensitivity to truncation errors of the Thomas algorithm
+  ! because it involves no subtraction, as discussed by Schopf & Loughe, MWR, 1995.
+  !
+  ! b1 is the denominator term 1 / (b_k + a_k c'_(k-1))
+  ! b_denom_1 is (b_k + a_k + c_k) - a_k(1 - c'_(k-1))
+  !            = (b_k + c_k + c'_(k-1))
+  ! this is done so that d1 = b1 * b_denom_1 = 1 - c'_(k-1)
+  ! c1(k) is -c'_(k - 1)
+  ! and the right-hand-side is destructively updated to be d'_k
 
-    if (associated(ADp%du_dt_str)) then
-      do i=is,ie ; if (abs(ADp%du_dt_str(I,j,nz)) < accel_underflow) ADp%du_dt_str(I,j,nz) = 0.0 ; enddo
-      do k=nz-1,1,-1 ; do I=Isq,Ieq ; if (do_i(I)) then
-        ADp%du_dt_str(I,j,k) = ADp%du_dt_str(I,j,k) + c1(I,k+1) * ADp%du_dt_str(I,j,k+1)
-        if (abs(ADp%du_dt_str(I,j,k)) < accel_underflow) ADp%du_dt_str(I,j,k) = 0.0
-      endif ; enddo ; enddo
+  if (allocated(visc%Ray_u)) then
+    do j=G%jsc,G%jec ; do I=Isq,Ieq
+      Ray(I,j) = visc%Ray_u(I,j,1)
+    enddo ; enddo
+  else
+    do j=G%jsc,G%jec ; do I=Isq,Ieq
+      Ray(I,j) = 0.
+    enddo ; enddo
+  endif
+
+  do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+    b_denom_1 = CS%h_u(I,j,1) + dt * (Ray(I,j) + CS%a_u(I,j,1))
+    b1(I,j) = 1.0 / (b_denom_1 + dt*CS%a_u(I,j,2))
+    d1(I,j) = b_denom_1 * b1(I,j)
+    u(I,j,1) = b1(I,j) * (CS%h_u(I,j,1) * u(I,j,1) + surface_stress(I,j))
+  endif ; enddo ; enddo
+
+  if (associated(ADp%du_dt_str)) then
+    do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      ADp%du_dt_str(I,j,1) = b1(I,j) * (CS%h_u(I,j,1) * ADp%du_dt_str(I,j,1) + surface_stress(I,j) * Idt)
+    endif ; enddo ; enddo
+  endif
+
+  do k=2,nz
+    if (allocated(visc%Ray_u)) then
+      do j=G%jsc,G%jec ; do I=Isq,Ieq
+        Ray(I,j) = visc%Ray_u(I,j,k)
+      enddo ; enddo
     endif
 
-    ! compute vertical velocity tendency that arises from GL90 viscosity;
-    ! follow tridiagonal solve method as above; to avoid corrupting u,
-    ! use ADp%du_dt_visc_gl90 as a placeholder for updated u (due to GL90) until last do loop
-    if ((CS%id_du_dt_visc_gl90 > 0) .or. (CS%id_GLwork > 0)) then
-      if (associated(ADp%du_dt_visc_gl90)) then
-        do I=Isq,Ieq ; if (do_i(I)) then
-          b_denom_1 = CS%h_u(I,j,1)  ! CS%a_u_gl90(I,j,1) is zero
-          b1(I) = 1.0 / (b_denom_1 + dt*CS%a_u_gl90(I,j,2))
-          d1(I) = b_denom_1 * b1(I)
-          ADp%du_dt_visc_gl90(I,j,1) = b1(I) * (CS%h_u(I,j,1) * ADp%du_dt_visc_gl90(I,j,1))
-        endif ; enddo
-        do k=2,nz ; do I=Isq,Ieq ; if (do_i(I)) then
-          c1(I,k) = dt * CS%a_u_gl90(I,j,K) * b1(I)
-          b_denom_1 = CS%h_u(I,j,k) + dt * (CS%a_u_gl90(I,j,K)*d1(I))
-          b1(I) = 1.0 / (b_denom_1 + dt * CS%a_u_gl90(I,j,K+1))
-          d1(I) = b_denom_1 * b1(I)
-          ADp%du_dt_visc_gl90(I,j,k) = (CS%h_u(I,j,k) * ADp%du_dt_visc_gl90(I,j,k) + &
-                      dt * CS%a_u_gl90(I,j,K) * ADp%du_dt_visc_gl90(I,j,k-1)) * b1(I)
+    do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      c1(I,j,k) = dt * CS%a_u(I,j,K) * b1(I,j)
+      b_denom_1 = CS%h_u(I,j,k) + dt * (Ray(I,j) + CS%a_u(I,j,K)*d1(I,j))
+      b1(I,j) = 1.0 / (b_denom_1 + dt * CS%a_u(I,j,K+1))
+      d1(I,j) = b_denom_1 * b1(I,j)
+      u(I,j,k) = (CS%h_u(I,j,k) * u(I,j,k) + &
+                  dt * CS%a_u(I,j,K) * u(I,j,k-1)) * b1(I,j)
+    endif ; enddo ; enddo
+
+    if (associated(ADp%du_dt_str)) then
+      do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+        ADp%du_dt_str(I,j,k) = (CS%h_u(I,j,k) * ADp%du_dt_str(I,j,k) &
+            + dt * CS%a_u(I,j,K) * ADp%du_dt_str(I,j,k-1)) * b1(I,j)
+      endif ; enddo ; enddo
+    endif
+  enddo
+
+  ! back substitute to solve for the new velocities
+  ! u_k = d'_k - c'_k x_(k+1)
+  do k=nz-1,1,-1
+    do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      u(I,j,k) = u(I,j,k) + c1(I,j,k+1) * u(I,j,k+1)
+    endif ; enddo ; enddo
+  enddo
+
+  if (associated(ADp%du_dt_str)) then
+    do j=G%isc,G%jec ; do I=Isq,Ieq
+      if (abs(ADp%du_dt_str(I,j,nz)) < accel_underflow) &
+        ADp%du_dt_str(I,j,nz) = 0.0
+    enddo ; enddo
+
+    do k=nz-1,1,-1
+      do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+        ADp%du_dt_str(I,j,k) = ADp%du_dt_str(I,j,k) + c1(I,j,k+1) * ADp%du_dt_str(I,j,k+1)
+
+        if (abs(ADp%du_dt_str(I,j,k)) < accel_underflow) &
+          ADp%du_dt_str(I,j,k) = 0.0
+      endif ; enddo ; enddo
+    enddo
+  endif
+
+  ! compute vertical velocity tendency that arises from GL90 viscosity;
+  ! follow tridiagonal solve method as above; to avoid corrupting u,
+  ! use ADp%du_dt_visc_gl90 as a placeholder for updated u (due to GL90) until last do loop
+  if ((CS%id_du_dt_visc_gl90 > 0) .or. (CS%id_GLwork > 0)) then
+    if (associated(ADp%du_dt_visc_gl90)) then
+      do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+        b_denom_1 = CS%h_u(I,j,1)  ! CS%a_u_gl90(I,j,1) is zero
+        b1(I,j) = 1.0 / (b_denom_1 + dt*CS%a_u_gl90(I,j,2))
+        d1(I,j) = b_denom_1 * b1(I,j)
+
+        ADp%du_dt_visc_gl90(I,j,1) = b1(I,j) * (CS%h_u(I,j,1) * ADp%du_dt_visc_gl90(I,j,1))
+      endif ; enddo ; enddo
+
+      do k=2,nz
+        do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+          c1(I,j,k) = dt * CS%a_u_gl90(I,j,K) * b1(I,j)
+          b_denom_1 = CS%h_u(I,j,k) + dt * (CS%a_u_gl90(I,j,K)*d1(I,j))
+          b1(I,j) = 1.0 / (b_denom_1 + dt * CS%a_u_gl90(I,j,K+1))
+          d1(I,j) = b_denom_1 * b1(I,j)
+
+          ADp%du_dt_visc_gl90(I,j,k) = (CS%h_u(I,j,k) * ADp%du_dt_visc_gl90(I,j,k) &
+              + dt * CS%a_u_gl90(I,j,K) * ADp%du_dt_visc_gl90(I,j,k-1)) * b1(I,j)
         endif ; enddo ; enddo
-        ! back substitute to solve for new velocities, held by ADp%du_dt_visc_gl90
-        do k=nz-1,1,-1 ; do I=Isq,Ieq ; if (do_i(I)) then
-          ADp%du_dt_visc_gl90(I,j,k) = ADp%du_dt_visc_gl90(I,j,k) + c1(I,k+1) * ADp%du_dt_visc_gl90(I,j,k+1)
-        endif ; enddo ; enddo ! i and k loops
-        do k=1,nz ; do I=Isq,Ieq ; if (do_i(I)) then
+      enddo
+
+      ! back substitute to solve for new velocities, held by ADp%du_dt_visc_gl90
+      do k=nz-1,1,-1
+        do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+          ADp%du_dt_visc_gl90(I,j,k) = ADp%du_dt_visc_gl90(I,j,k) &
+              + c1(I,j,k+1) * ADp%du_dt_visc_gl90(I,j,k+1)
+        endif ; enddo ; enddo
+      enddo
+
+      do k=1,nz
+        do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
           ! now fill ADp%du_dt_visc_gl90(I,j,k) with actual velocity tendency due to GL90;
           ! note that on RHS: ADp%du_dt_visc(I,j,k) holds the original velocity value u(I,j,k)
           ! and ADp%du_dt_visc_gl90(I,j,k) the updated velocity due to GL90
-          ADp%du_dt_visc_gl90(I,j,k) = (ADp%du_dt_visc_gl90(I,j,k) - ADp%du_dt_visc(I,j,k))*Idt
-          if (abs(ADp%du_dt_visc_gl90(I,j,k)) < accel_underflow) ADp%du_dt_visc_gl90(I,j,k) = 0.0
-        endif ; enddo ; enddo ;
-        ! to compute energetics, we need to multiply by u*h, where u is original velocity before
-        ! velocity update; note that ADp%du_dt_visc(I,j,k) holds the original velocity value u(I,j,k)
-        if (CS%id_GLwork > 0) then
-          do k=1,nz; do I=Isq,Ieq ; if (do_i(I)) then
-              KE_u(I,j,k) = ADp%du_dt_visc(I,j,k) * CS%h_u(I,j,k) * G%areaCu(I,j) * ADp%du_dt_visc_gl90(I,j,k)
+          ADp%du_dt_visc_gl90(I,j,k) = &
+              (ADp%du_dt_visc_gl90(I,j,k) - ADp%du_dt_visc(I,j,k)) * Idt
+
+          if (abs(ADp%du_dt_visc_gl90(I,j,k)) < accel_underflow) then
+            ADp%du_dt_visc_gl90(I,j,k) = 0.0
+          endif
+        endif ; enddo ; enddo
+      enddo
+
+      ! to compute energetics, we need to multiply by u*h, where u is original velocity before
+      ! velocity update; note that ADp%du_dt_visc(I,j,k) holds the original velocity value u(I,j,k)
+      if (CS%id_GLwork > 0) then
+        do k=1,nz
+          do j=G%isc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+            KE_u(I,j,k) = ADp%du_dt_visc(I,j,k) * CS%h_u(I,j,k) * G%areaCu(I,j) * ADp%du_dt_visc_gl90(I,j,k)
           endif ; enddo ; enddo
-        endif
+        enddo
       endif
     endif
+  endif
 
-    if (associated(ADp%du_dt_visc)) then ; do k=1,nz ; do I=Isq,Ieq
-      ADp%du_dt_visc(I,j,k) = (u(I,j,k) - ADp%du_dt_visc(I,j,k))*Idt
-      if (abs(ADp%du_dt_visc(I,j,k)) < accel_underflow) ADp%du_dt_visc(I,j,k) = 0.0
-    enddo ; enddo ; endif
+  if (associated(ADp%du_dt_visc)) then
+    do k=1,nz ; do j=G%jsc,G%jec ; do I=Isq,Ieq
+      ADp%du_dt_visc(I,j,k) = (u(I,j,k) - ADp%du_dt_visc(I,j,k)) * Idt
 
-    if (allocated(visc%taux_shelf)) then ; do I=Isq,Ieq
-      visc%taux_shelf(I,j) = -GV%H_to_RZ*CS%a1_shelf_u(I,j)*u(I,j,1) ! - u_shelf?
-    enddo ; endif
+      if (abs(ADp%du_dt_visc(I,j,k)) < accel_underflow) &
+        ADp%du_dt_visc(I,j,k) = 0.0
+    enddo ; enddo ; enddo
+  endif
 
-    if (PRESENT(taux_bot)) then
-      do I=Isq,Ieq
-        taux_bot(I,j) = GV%H_to_RZ * (u(I,j,nz)*CS%a_u(I,j,nz+1))
+  if (allocated(visc%taux_shelf)) then
+    do j=G%jsc,G%jec ; do I=Isq,Ieq
+      visc%taux_shelf(I,j) = -GV%H_to_RZ * CS%a1_shelf_u(I,j) * u(I,j,1) ! - u_shelf?
+    enddo ; enddo
+  endif
+
+  if (present(taux_bot)) then
+    do j=G%jsc,G%jec ; do I=Isq,Ieq
+      taux_bot(I,j) = GV%H_to_RZ * (u(I,j,nz) * CS%a_u(I,j,nz+1))
+    enddo ; enddo
+
+    if (allocated(visc%Ray_u)) then
+      do k=1,nz ; do j=G%jsc,G%jec ; do I=Isq,Ieq
+        taux_bot(I,j) = taux_bot(I,j) + GV%H_to_RZ * (visc%Ray_u(I,j,k) * u(I,j,k))
+      enddo ; enddo ; enddo
+    endif
+  endif
+
+  ! When mixing down Eulerian current + Stokes drift subtract after calling solver
+  if (DoStokesMixing) then
+    do k=1,nz ; do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      u(I,j,k) = u(I,j,k) - Waves%Us_x(I,j,k)
+    endif ; enddo ; enddo ; enddo
+  endif
+
+  if (lfpmix) then
+    do k=1,nz ; do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      u(I,j,k) = u(I,j,k) + Waves%Us_x(I,j,k)
+    endif ; enddo ; enddo ; enddo
+  endif
+
+  ! == Now work on the meridional velocity component.
+
+  ! When mixing down Eulerian current + Stokes drift add before calling solver
+  if (DoStokesMixing) then
+    do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+      v(i,j,k) = v(i,j,k) + Waves%Us_y(i,j,k)
+    endif ; enddo ; enddo ; enddo
+  endif
+
+  if (lfpmix) then
+    do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+      v(i,j,k) = v(i,j,k) - Waves%Us_y(i,j,k)
+    endif ; enddo ; enddo ; enddo
+  endif
+
+  if (associated(ADp%dv_dt_visc)) then
+    do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
+      ADp%dv_dt_visc(i,J,k) = v(i,J,k)
+    enddo ; enddo ; enddo
+  endif
+
+  if (associated(ADp%dv_dt_visc_gl90)) then
+    do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
+      ADp%dv_dt_visc_gl90(i,J,k) = v(i,J,k)
+    enddo ; enddo ; enddo
+  endif
+
+  if (associated(ADp%dv_dt_str)) then
+    do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
+      ADp%dv_dt_str(i,J,k) = 0.0
+    enddo ; enddo ; enddo
+  endif
+
+  !   One option is to have the wind stress applied as a body force
+  ! over the topmost Hmix fluid.  If DIRECT_STRESS is not defined,
+  ! the wind stress is applied as a stress boundary condition.
+  if (CS%direct_stress) then
+    do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+      surface_stress(i,J) = 0.0
+      zDS = 0.0
+      stress = dt_Rho0 * forces%tauy(i,J)
+      do k=1,nz
+        h_a = 0.5 * (h(i,J,k) + h(i,J+1,k)) + h_neglect
+        hfr = 1.0 ; if ((zDS+h_a) > Hmix) hfr = (Hmix - zDS) / h_a
+        v(i,J,k) = v(i,J,k) + I_Hmix * hfr * stress
+        if (associated(ADp%dv_dt_str)) ADp%dv_dt_str(i,J,k) = (I_Hmix * hfr * stress) * Idt
+        zDS = zDS + h_a ; if (zDS >= Hmix) exit
       enddo
-      if (allocated(visc%Ray_u)) then ; do k=1,nz ; do I=Isq,Ieq
-        taux_bot(I,j) = taux_bot(I,j) + GV%H_to_RZ * (Ray(I,k)*u(I,j,k))
-      enddo ; enddo ; endif
+    endif ; enddo ; enddo
+  else
+    do J=Jsq,Jeq ; do i=is,ie
+      surface_stress(i,J) = dt_Rho0 * (G%mask2dCv(i,J) * forces%tauy(i,J))
+    enddo ; enddo
+  endif
+
+  if (allocated(visc%Ray_v)) then
+    do J=Jsq,Jeq ; do i=is,ie
+      Ray(i,J) = visc%Ray_v(i,J,1)
+    enddo ; enddo
+  else
+    do J=Jsq,Jeq ; do i=is,ie
+      Ray(i,J) = 0.
+    enddo ; enddo
+  endif
+
+  do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+    b_denom_1 = CS%h_v(i,J,1) + dt * (Ray(i,J) + CS%a_v(i,J,1))
+    b1(i,J) = 1.0 / (b_denom_1 + dt*CS%a_v(i,J,2))
+    d1(i,J) = b_denom_1 * b1(i,J)
+    v(i,J,1) = b1(i,J) * (CS%h_v(i,J,1) * v(i,J,1) + surface_stress(i,J))
+  endif ; enddo ; enddo
+
+  if (associated(ADp%dv_dt_str)) then
+    do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+      ADp%dv_dt_str(i,J,1) = b1(i,J) * (CS%h_v(i,J,1) * ADp%dv_dt_str(i,J,1) + surface_stress(i,J) * Idt)
+    endif ; enddo ; enddo
+  endif
+
+  do k=2,nz
+    if (allocated(visc%Ray_v)) then
+      do J=Jsq,Jeq ; do i=is,ie
+        Ray(i,J) = visc%Ray_v(i,J,k)
+      enddo ; enddo
     endif
 
-    ! When mixing down Eulerian current + Stokes drift subtract after calling solver
-    if (DoStokesMixing) then ; do k=1,nz ; do I=Isq,Ieq
-      if (do_i(I)) u(I,j,k) = u(I,j,k) - Waves%Us_x(I,j,k)
-    enddo ; enddo ; endif
-
-  enddo ! end u-component j loop
-
-  ! Now work on the meridional velocity component.
-
-  !$OMP parallel do default(shared) firstprivate(Ray) &
-  !$OMP               private(do_i,surface_stress,zDS,stress,h_a,hfr, &
-  !$OMP                       b_denom_1,b1,d1,c1)
-  do J=Jsq,Jeq
-    do i=is,ie ; do_i(i) = (G%mask2dCv(i,J) > 0.0) ; enddo
-
-    ! When mixing down Eulerian current + Stokes drift add before calling solver
-    if (DoStokesMixing) then ; do k=1,nz ; do i=is,ie
-      if (do_i(i)) v(i,j,k) = v(i,j,k) + Waves%Us_y(i,j,k)
-    enddo ; enddo ; endif
-
-    if (associated(ADp%dv_dt_visc)) then ; do k=1,nz ; do i=is,ie
-      ADp%dv_dt_visc(i,J,k) = v(i,J,k)
-    enddo ; enddo ; endif
-    if (associated(ADp%dv_dt_visc_gl90)) then ; do k=1,nz ; do i=is,ie
-      ADp%dv_dt_visc_gl90(i,J,k) = v(i,J,k)
-    enddo ; enddo ; endif
-    if (associated(ADp%dv_dt_str)) then ; do k=1,nz ; do i=is,ie
-      ADp%dv_dt_str(i,J,k) = 0.0
-    enddo ; enddo ; endif
-
-    !   One option is to have the wind stress applied as a body force
-    ! over the topmost Hmix fluid.  If DIRECT_STRESS is not defined,
-    ! the wind stress is applied as a stress boundary condition.
-    if (CS%direct_stress) then
-      do i=is,ie ; if (do_i(i)) then
-        surface_stress(i) = 0.0
-        zDS = 0.0
-        stress = dt_Rho0 * forces%tauy(i,J)
-        do k=1,nz
-          h_a = 0.5 * (h(i,J,k) + h(i,J+1,k)) + h_neglect
-          hfr = 1.0 ; if ((zDS+h_a) > Hmix) hfr = (Hmix - zDS) / h_a
-          v(i,J,k) = v(i,J,k) + I_Hmix * hfr * stress
-          if (associated(ADp%dv_dt_str)) ADp%dv_dt_str(i,J,k) = (I_Hmix * hfr * stress) * Idt
-          zDS = zDS + h_a ; if (zDS >= Hmix) exit
-        enddo
-      endif ; enddo ! end of i loop
-    else ; do i=is,ie
-      surface_stress(i) = dt_Rho0 * (G%mask2dCv(i,J)*forces%tauy(i,J))
-    enddo ; endif ! direct_stress
-
-    if (allocated(visc%Ray_v)) then ; do k=1,nz ; do i=is,ie
-      Ray(i,k) = visc%Ray_v(i,J,k)
-    enddo ; enddo ; endif
-
-    do i=is,ie ; if (do_i(i)) then
-      b_denom_1 = CS%h_v(i,J,1) + dt * (Ray(i,1) + CS%a_v(i,J,1))
-      b1(i) = 1.0 / (b_denom_1 + dt*CS%a_v(i,J,2))
-      d1(i) = b_denom_1 * b1(i)
-      v(i,J,1) = b1(i) * (CS%h_v(i,J,1) * v(i,J,1) + surface_stress(i))
-      if (associated(ADp%dv_dt_str)) &
-        ADp%dv_dt_str(i,J,1) = b1(i) * (CS%h_v(i,J,1) * ADp%dv_dt_str(i,J,1) + surface_stress(i)*Idt)
-    endif ; enddo
-    do k=2,nz ; do i=is,ie ; if (do_i(i)) then
-      c1(i,k) = dt * CS%a_v(i,J,K) * b1(i)
-      b_denom_1 = CS%h_v(i,J,k) + dt * (Ray(i,k) + CS%a_v(i,J,K)*d1(i))
-      b1(i) = 1.0 / (b_denom_1 + dt * CS%a_v(i,J,K+1))
-      d1(i) = b_denom_1 * b1(i)
-      v(i,J,k) = (CS%h_v(i,J,k) * v(i,J,k) + dt * CS%a_v(i,J,K) * v(i,J,k-1)) * b1(i)
-      if (associated(ADp%dv_dt_str)) &
-        ADp%dv_dt_str(i,J,k) = (CS%h_v(i,J,k) * ADp%dv_dt_str(i,J,k) + &
-                                dt * CS%a_v(i,J,K) * ADp%dv_dt_str(i,J,k-1)) * b1(i)
+    do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+      c1(i,J,k) = dt * CS%a_v(i,J,K) * b1(i,J)
+      b_denom_1 = CS%h_v(i,J,k) + dt * (Ray(i,J) + CS%a_v(i,J,K)*d1(i,J))
+      b1(i,J) = 1.0 / (b_denom_1 + dt * CS%a_v(i,J,K+1))
+      d1(i,J) = b_denom_1 * b1(i,J)
+      v(i,J,k) = (CS%h_v(i,J,k) * v(i,J,k) + dt * CS%a_v(i,J,K) * v(i,J,k-1)) * b1(i,J)
     endif ; enddo ; enddo
-    do k=nz-1,1,-1 ; do i=is,ie ; if (do_i(i)) then
-      v(i,J,k) = v(i,J,k) + c1(i,k+1) * v(i,J,k+1)
-    endif ; enddo ; enddo ! i and k loops
 
     if (associated(ADp%dv_dt_str)) then
-      do i=is,ie ; if (abs(ADp%dv_dt_str(i,J,nz)) < accel_underflow) ADp%dv_dt_str(i,J,nz) = 0.0 ; enddo
-      do k=nz-1,1,-1 ; do i=is,ie ; if (do_i(i)) then
-        ADp%dv_dt_str(i,J,k) = ADp%dv_dt_str(i,J,k) + c1(i,k+1) * ADp%dv_dt_str(i,J,k+1)
-        if (abs(ADp%dv_dt_str(i,J,k)) < accel_underflow) ADp%dv_dt_str(i,J,k) = 0.0
+      do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+        ADp%dv_dt_str(i,J,k) = (CS%h_v(i,J,k) * ADp%dv_dt_str(i,J,k) &
+            + dt * CS%a_v(i,J,K) * ADp%dv_dt_str(i,J,k-1)) * b1(i,J)
       endif ; enddo ; enddo
     endif
+  enddo
 
-    ! compute vertical velocity tendency that arises from GL90 viscosity;
-    ! follow tridiagonal solve method as above; to avoid corrupting v,
-    ! use ADp%dv_dt_visc_gl90 as a placeholder for updated u (due to GL90) until last do loop
-    if ((CS%id_dv_dt_visc_gl90 > 0) .or. (CS%id_GLwork > 0)) then
-      if (associated(ADp%dv_dt_visc_gl90)) then
-        do i=is,ie ; if (do_i(i)) then
-          b_denom_1 = CS%h_v(i,J,1)  ! CS%a_v_gl90(i,J,1) is zero
-          b1(i) = 1.0 / (b_denom_1 + dt*CS%a_v_gl90(i,J,2))
-          d1(i) = b_denom_1 * b1(i)
-          ADp%dv_dt_visc_gl90(I,J,1) = b1(i) * (CS%h_v(i,J,1) * ADp%dv_dt_visc_gl90(i,J,1))
-        endif ; enddo
-        do k=2,nz ; do i=is,ie ; if (do_i(i)) then
-          c1(i,k) = dt * CS%a_v_gl90(i,J,K) * b1(i)
-          b_denom_1 = CS%h_v(i,J,k) + dt * (CS%a_v_gl90(i,J,K)*d1(i))
-          b1(i) = 1.0 / (b_denom_1 + dt * CS%a_v_gl90(i,J,K+1))
-          d1(i) = b_denom_1 * b1(i)
+  do k=nz-1,1,-1
+    do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+      v(i,J,k) = v(i,J,k) + c1(i,J,k+1) * v(i,J,k+1)
+    endif ; enddo ; enddo
+  enddo
+
+  if (associated(ADp%dv_dt_str)) then
+    do J=Jsq,Jeq ; do i=is,ie
+      if (abs(ADp%dv_dt_str(i,J,nz)) < accel_underflow) ADp%dv_dt_str(i,J,nz) = 0.0
+    enddo ; enddo
+
+    do k=nz-1,1,-1
+      do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+        ADp%dv_dt_str(i,J,k) = ADp%dv_dt_str(i,J,k) + c1(i,J,k+1) * ADp%dv_dt_str(i,J,k+1)
+        if (abs(ADp%dv_dt_str(i,J,k)) < accel_underflow) ADp%dv_dt_str(i,J,k) = 0.0
+      endif ; enddo ; enddo
+    enddo
+  endif
+
+  ! compute vertical velocity tendency that arises from GL90 viscosity;
+  ! follow tridiagonal solve method as above; to avoid corrupting v,
+  ! use ADp%dv_dt_visc_gl90 as a placeholder for updated u (due to GL90) until last do loop
+  if ((CS%id_dv_dt_visc_gl90 > 0) .or. (CS%id_GLwork > 0)) then
+    if (associated(ADp%dv_dt_visc_gl90)) then
+      do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+        b_denom_1 = CS%h_v(i,J,1)  ! CS%a_v_gl90(i,J,1) is zero
+        b1(i,J) = 1.0 / (b_denom_1 + dt*CS%a_v_gl90(i,J,2))
+        d1(i,J) = b_denom_1 * b1(i,J)
+        ADp%dv_dt_visc_gl90(I,J,1) = b1(i,J) * (CS%h_v(i,J,1) * ADp%dv_dt_visc_gl90(i,J,1))
+      endif ; enddo ; enddo
+
+      do k=2,nz
+        do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+          c1(i,J,k) = dt * CS%a_v_gl90(i,J,K) * b1(i,J)
+          b_denom_1 = CS%h_v(i,J,k) + dt * (CS%a_v_gl90(i,J,K)*d1(i,J))
+          b1(i,J) = 1.0 / (b_denom_1 + dt * CS%a_v_gl90(i,J,K+1))
+          d1(i,J) = b_denom_1 * b1(i,J)
           ADp%dv_dt_visc_gl90(i,J,k) = (CS%h_v(i,J,k) * ADp%dv_dt_visc_gl90(i,J,k) + &
-                      dt * CS%a_v_gl90(i,J,K) * ADp%dv_dt_visc_gl90(i,J,k-1)) * b1(i)
+                      dt * CS%a_v_gl90(i,J,K) * ADp%dv_dt_visc_gl90(i,J,k-1)) * b1(i,J)
         endif ; enddo ; enddo
-        ! back substitute to solve for new velocities, held by ADp%dv_dt_visc_gl90
-        do k=nz-1,1,-1 ; do i=is,ie ; if (do_i(i)) then
-          ADp%dv_dt_visc_gl90(i,J,k) = ADp%dv_dt_visc_gl90(i,J,k) + c1(i,k+1) * ADp%dv_dt_visc_gl90(i,J,k+1)
-        endif ; enddo ; enddo ! i and k loops
-        do k=1,nz ; do i=is,ie ; if (do_i(i)) then
+      enddo
+
+      ! back substitute to solve for new velocities, held by ADp%dv_dt_visc_gl90
+      do k=nz-1,1,-1
+        do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+          ADp%dv_dt_visc_gl90(i,J,k) = ADp%dv_dt_visc_gl90(i,J,k) + c1(i,J,k+1) * ADp%dv_dt_visc_gl90(i,J,k+1)
+        endif ; enddo ; enddo
+      enddo
+
+      do k=1,nz
+        do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
           ! now fill ADp%dv_dt_visc_gl90(i,J,k) with actual velocity tendency due to GL90;
           ! note that on RHS: ADp%dv_dt_visc(i,J,k) holds the original velocity value v(i,J,k)
           ! and ADp%dv_dt_visc_gl90(i,J,k) the updated velocity due to GL90
           ADp%dv_dt_visc_gl90(i,J,k) = (ADp%dv_dt_visc_gl90(i,J,k) - ADp%dv_dt_visc(i,J,k))*Idt
           if (abs(ADp%dv_dt_visc_gl90(i,J,k)) < accel_underflow) ADp%dv_dt_visc_gl90(i,J,k) = 0.0
-        endif ; enddo ; enddo ;
-        ! to compute energetics, we need to multiply by v*h, where u is original velocity before
-        ! velocity update; note that ADp%dv_dt_visc(I,j,k) holds the original velocity value v(i,J,k)
-        if (CS%id_GLwork > 0) then
-          do k=1,nz ; do i=is,ie ; if (do_i(i)) then
-              ! note that on RHS: ADp%dv_dt_visc(I,j,k) holds the original velocity value v(I,j,k)
-              KE_v(I,j,k) = ADp%dv_dt_visc(i,J,k) * CS%h_v(i,J,k) * G%areaCv(i,J) * ADp%dv_dt_visc_gl90(i,J,k)
+        endif ; enddo ; enddo
+      enddo
+
+      ! to compute energetics, we need to multiply by v*h, where u is original velocity before
+      ! velocity update; note that ADp%dv_dt_visc(I,j,k) holds the original velocity value v(i,J,k)
+      if (CS%id_GLwork > 0) then
+        do k=1,nz
+          do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+            ! note that on RHS: ADp%dv_dt_visc(I,j,k) holds the original velocity value v(I,j,k)
+            KE_v(I,j,k) = ADp%dv_dt_visc(i,J,k) * CS%h_v(i,J,k) * G%areaCv(i,J) * ADp%dv_dt_visc_gl90(i,J,k)
           endif ; enddo ; enddo
-        endif
+        enddo
       endif
     endif
+  endif
 
-    if (associated(ADp%dv_dt_visc)) then ; do k=1,nz ; do i=is,ie
+  if (associated(ADp%dv_dt_visc)) then
+    do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
       ADp%dv_dt_visc(i,J,k) = (v(i,J,k) - ADp%dv_dt_visc(i,J,k))*Idt
       if (abs(ADp%dv_dt_visc(i,J,k)) < accel_underflow) ADp%dv_dt_visc(i,J,k) = 0.0
-    enddo ; enddo ; endif
+    enddo ; enddo ; enddo
+  endif
 
-    if (allocated(visc%tauy_shelf)) then ; do i=is,ie
-      visc%tauy_shelf(i,J) = -GV%H_to_RZ*CS%a1_shelf_v(i,J)*v(i,J,1) ! - v_shelf?
-    enddo ; endif
+  if (allocated(visc%tauy_shelf)) then
+    do J=Jsq,Jeq ; do i=is,ie
+      visc%tauy_shelf(i,J) = -GV%H_to_RZ * CS%a1_shelf_v(i,J) * v(i,J,1) ! - v_shelf?
+    enddo ; enddo
+  endif
 
-    if (present(tauy_bot)) then
-      do i=is,ie
-        tauy_bot(i,J) = GV%H_to_RZ * (v(i,J,nz)*CS%a_v(i,J,nz+1))
-      enddo
-      if (allocated(visc%Ray_v)) then ; do k=1,nz ; do i=is,ie
-        tauy_bot(i,J) = tauy_bot(i,J) + GV%H_to_RZ * (Ray(i,k)*v(i,J,k))
-      enddo ; enddo ; endif
+  if (present(tauy_bot)) then
+    do J=Jsq,Jeq ; do i=is,ie
+      tauy_bot(i,J) = GV%H_to_RZ * (v(i,J,nz) * CS%a_v(i,J,nz+1))
+    enddo; enddo
+
+    if (allocated(visc%Ray_v)) then
+      do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie
+        tauy_bot(i,J) = tauy_bot(i,J) + GV%H_to_RZ * (visc%Ray_v(i,J,k)*v(i,J,k))
+      enddo ; enddo ; enddo
     endif
+  endif
 
-    ! When mixing down Eulerian current + Stokes drift subtract after calling solver
-    if (DoStokesMixing) then ; do k=1,nz ; do i=is,ie
-      if (do_i(i)) v(i,J,k) = v(i,J,k) - Waves%Us_y(i,J,k)
-    enddo ; enddo ; endif
+  ! When mixing down Eulerian current + Stokes drift subtract after calling solver
+  if (DoStokesMixing) then
+    do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+      v(i,J,k) = v(i,J,k) - Waves%Us_y(i,J,k)
+    endif ; enddo ; enddo ; enddo
+  endif
 
-  enddo ! end of v-component J loop
+  if (lfpmix) then
+    do k=1,nz ; do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+      v(i,J,k) = v(i,J,k) + Waves%Us_y(i,J,k)
+    endif ; enddo ; enddo ; enddo
+  endif
 
   ! Calculate the KE source from GL90 vertical viscosity [H L2 T-3 ~> m3 s-3].
   ! We do the KE-rate calculation here (rather than in MOM_diagnostics) to ensure
@@ -1215,6 +1204,7 @@ subroutine vertvisc(u, v, h, forces, visc, dt, OBC, ADp, CDp, G, GV, US, CS, &
 
 end subroutine vertvisc
 
+
 !> Calculate the fraction of momentum originally in a layer that remains in the water column
 !! after a time-step of viscosity, equivalently the fraction of a time-step's worth of
 !! barotropic acceleration that a layer experiences after viscosity is applied.
@@ -1236,12 +1226,15 @@ subroutine vertvisc_remnant(visc, visc_rem_u, visc_rem_v, dt, G, GV, US, CS)
 
   ! Local variables
 
-  real :: b1(SZIB_(G))           ! A variable used by the tridiagonal solver [H-1 ~> m-1 or m2 kg-1].
-  real :: c1(SZIB_(G),SZK_(GV))  ! A variable used by the tridiagonal solver [nondim].
-  real :: d1(SZIB_(G))           ! d1=1-c1 is used by the tridiagonal solver [nondim].
-  real :: Ray(SZIB_(G),SZK_(GV)) ! Ray is the Rayleigh-drag velocity [H T-1 ~> m s-1 or Pa s m-1]
+  real :: b1(SZIB_(G),SZJB_(G))
+    ! A variable used by the tridiagonal solver [H-1 ~> m-1 or m2 kg-1].
+  real :: c1(SZIB_(G),SZJB_(G),SZK_(GV))
+    ! A variable used by the tridiagonal solver [nondim].
+  real :: d1(SZIB_(G),SZJB_(G))
+    ! d1=1-c1 is used by the tridiagonal solver [nondim].
+  real :: Ray(SZIB_(G),SZJB_(G))
+    ! Ray is the Rayleigh-drag velocity [H T-1 ~> m s-1 or Pa s m-1]
   real :: b_denom_1   ! The first term in the denominator of b1 [H ~> m or kg m-2].
-  logical :: do_i(SZIB_(G))
 
   integer :: i, j, k, is, ie, Isq, Ieq, Jsq, Jeq, nz
   is = G%isc ; ie = G%iec
@@ -1253,69 +1246,90 @@ subroutine vertvisc_remnant(visc, visc_rem_u, visc_rem_v, dt, G, GV, US, CS)
   if (.not.CS%initialized) call MOM_error(FATAL,"MOM_vert_friction(remant): "// &
          "Module must be initialized before it is used.")
 
-  do k=1,nz ; do i=Isq,Ieq ; Ray(i,k) = 0.0 ; enddo ; enddo
-
   ! Find the zonal viscous remnant using a modification of a standard tridagonal solver.
-  !$OMP parallel do default(shared) firstprivate(Ray) private(do_i,b_denom_1,b1,d1,c1)
-  do j=G%jsc,G%jec
-    do I=Isq,Ieq ; do_i(I) = (G%mask2dCu(I,j) > 0.0) ; enddo
+  if (allocated(visc%Ray_u)) then
+    do j=G%jsc,G%jec ; do I=Isq,Ieq
+      Ray(I,j) = visc%Ray_u(I,j,1)
+    enddo ; enddo
+  else
+    do j=G%jsc,G%jec ; do I=Isq,Ieq
+      Ray(I,j) = 0.
+    enddo ; enddo
+  endif
 
-    if (allocated(visc%Ray_u)) then ; do k=1,nz ; do I=Isq,Ieq
-      Ray(I,k) = visc%Ray_u(I,j,k)
-    enddo ; enddo ; endif
+  do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+    b_denom_1 = CS%h_u(I,j,1) + dt * (Ray(I,j) + CS%a_u(I,j,1))
+    b1(I,j) = 1.0 / (b_denom_1 + dt * CS%a_u(I,j,2))
+    d1(I,j) = b_denom_1 * b1(I,j)
+    visc_rem_u(I,j,1) = b1(I,j) * CS%h_u(I,j,1)
+  endif ; enddo ; enddo
 
-    do I=Isq,Ieq ; if (do_i(I)) then
-      b_denom_1 = CS%h_u(I,j,1) + dt * (Ray(I,1) + CS%a_u(I,j,1))
-      b1(I) = 1.0 / (b_denom_1 + dt*CS%a_u(I,j,2))
-      d1(I) = b_denom_1 * b1(I)
-      visc_rem_u(I,j,1) = b1(I) * CS%h_u(I,j,1)
-    endif ; enddo
-    do k=2,nz ; do I=Isq,Ieq ; if (do_i(I)) then
-      c1(I,k) = dt * CS%a_u(I,j,K)*b1(I)
-      b_denom_1 = CS%h_u(I,j,k) + dt * (Ray(I,k) + CS%a_u(I,j,K)*d1(I))
-      b1(I) = 1.0 / (b_denom_1 + dt * CS%a_u(I,j,K+1))
-      d1(I) = b_denom_1 * b1(I)
-      visc_rem_u(I,j,k) = (CS%h_u(I,j,k) + dt * CS%a_u(I,j,K) * visc_rem_u(I,j,k-1)) * b1(I)
+  do k=2,nz
+    if (allocated(visc%Ray_u)) then
+      do j=G%jsc,G%jec ; do I=Isq,Ieq
+        Ray(I,j) = visc%Ray_u(I,j,k)
+      enddo ; enddo
+    endif
+
+    do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      c1(I,j,k) = dt * CS%a_u(I,j,K)*b1(I,j)
+      b_denom_1 = CS%h_u(I,j,k) + dt * (Ray(I,j) + CS%a_u(I,j,K) * d1(I,j))
+      b1(I,j) = 1.0 / (b_denom_1 + dt * CS%a_u(I,j,K+1))
+      d1(I,j) = b_denom_1 * b1(I,j)
+      visc_rem_u(I,j,k) = (CS%h_u(I,j,k) + dt * CS%a_u(I,j,K) * visc_rem_u(I,j,k-1)) * b1(I,j)
     endif ; enddo ; enddo
-    do k=nz-1,1,-1 ; do I=Isq,Ieq ; if (do_i(I)) then
-      visc_rem_u(I,j,k) = visc_rem_u(I,j,k) + c1(I,k+1)*visc_rem_u(I,j,k+1)
+  enddo
 
-    endif ; enddo ; enddo ! i and k loops
-
-  enddo ! end u-component j loop
+  do k=nz-1,1,-1
+    do j=G%jsc,G%jec ; do I=Isq,Ieq ; if (G%mask2dCu(I,j) > 0.) then
+      visc_rem_u(I,j,k) = visc_rem_u(I,j,k) + c1(I,j,k+1) * visc_rem_u(I,j,k+1)
+    endif ; enddo ; enddo
+  enddo
 
   ! Now find the meridional viscous remnant using the robust tridiagonal solver.
-  !$OMP parallel do default(shared) firstprivate(Ray) private(do_i,b_denom_1,b1,d1,c1)
-  do J=Jsq,Jeq
-    do i=is,ie ; do_i(i) = (G%mask2dCv(i,J) > 0.0) ; enddo
+  if (allocated(visc%Ray_v)) then
+    do J=Jsq,Jeq ; do i=is,ie
+      Ray(i,J) = visc%Ray_v(i,J,1)
+    enddo ; enddo
+  else
+    do J=Jsq,Jeq ; do i=is,ie
+      Ray(i,J) = 0.
+    enddo ; enddo
+  endif
 
-    if (allocated(visc%Ray_v)) then ; do k=1,nz ; do i=is,ie
-      Ray(i,k) = visc%Ray_v(i,J,k)
-    enddo ; enddo ; endif
+  do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+    b_denom_1 = CS%h_v(i,J,1) + dt * (Ray(i,J) + CS%a_v(i,J,1))
+    b1(i,J) = 1.0 / (b_denom_1 + dt*CS%a_v(i,J,2))
+    d1(i,J) = b_denom_1 * b1(i,J)
+    visc_rem_v(i,J,1) = b1(i,J) * CS%h_v(i,J,1)
+  endif ; enddo ; enddo
 
-    do i=is,ie ; if (do_i(i)) then
-      b_denom_1 = CS%h_v(i,J,1) + dt * (Ray(i,1) + CS%a_v(i,J,1))
-      b1(i) = 1.0 / (b_denom_1 + dt*CS%a_v(i,J,2))
-      d1(i) = b_denom_1 * b1(i)
-      visc_rem_v(i,J,1) = b1(i) * CS%h_v(i,J,1)
-    endif ; enddo
-    do k=2,nz ; do i=is,ie ; if (do_i(i)) then
-      c1(i,k) = dt * CS%a_v(i,J,K)*b1(i)
-      b_denom_1 = CS%h_v(i,J,k) + dt * (Ray(i,k) + CS%a_v(i,J,K)*d1(i))
-      b1(i) = 1.0 / (b_denom_1 + dt * CS%a_v(i,J,K+1))
-      d1(i) = b_denom_1 * b1(i)
-      visc_rem_v(i,J,k) = (CS%h_v(i,J,k) + dt * CS%a_v(i,J,K) * visc_rem_v(i,J,k-1)) * b1(i)
+  do k=2,nz
+    if (allocated(visc%Ray_v)) then
+      do J=Jsq,Jeq ; do i=is,ie
+        Ray(i,J) = visc%Ray_v(i,J,k)
+      enddo ; enddo
+    endif
+
+    do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+      c1(i,J,k) = dt * CS%a_v(i,J,K) * b1(i,J)
+      b_denom_1 = CS%h_v(i,J,k) + dt * (Ray(i,J) + CS%a_v(i,J,K) * d1(i,J))
+      b1(i,J) = 1.0 / (b_denom_1 + dt * CS%a_v(i,J,K+1))
+      d1(i,J) = b_denom_1 * b1(i,J)
+      visc_rem_v(i,J,k) = (CS%h_v(i,J,k) + dt * CS%a_v(i,J,K) * visc_rem_v(i,J,k-1)) * b1(i,J)
     endif ; enddo ; enddo
-    do k=nz-1,1,-1 ; do i=is,ie ; if (do_i(i)) then
-      visc_rem_v(i,J,k) = visc_rem_v(i,J,k) + c1(i,k+1)*visc_rem_v(i,J,k+1)
+  enddo
+
+  do k=nz-1,1,-1
+    do J=Jsq,Jeq ; do i=is,ie ; if (G%mask2dCv(i,J) > 0.) then
+      visc_rem_v(i,J,k) = visc_rem_v(i,J,k) + c1(i,J,k+1) * visc_rem_v(i,J,k+1)
     endif ; enddo ; enddo ! i and k loops
-  enddo ! end of v-component J loop
+  enddo
 
   if (CS%debug) then
     call uvchksum("visc_rem_[uv]", visc_rem_u, visc_rem_v, G%HI, haloshift=0, &
                   scalar_pair=.true.)
   endif
-
 end subroutine vertvisc_remnant
 
 
@@ -2613,7 +2627,7 @@ end subroutine vertvisc_limit_vel
 
 !> Initialize the vertical friction module
 subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
-                         ntrunc, CS)
+                          ntrunc, CS, fpmix)
   type(ocean_internal_state), &
                    target, intent(in)    :: MIS    !< The "MOM Internal State", a set of pointers
                                                    !! to the fields and accelerations that make
@@ -2628,6 +2642,7 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
   type(directories),       intent(in)    :: dirs   !< Relevant directory paths
   integer, target,         intent(inout) :: ntrunc !< Number of velocity truncations
   type(vertvisc_CS),       pointer       :: CS     !< Vertical viscosity control structure
+  logical, optional,       intent(in)    :: fpmix  !< Nonlocal momentum mixing
 
   ! Local variables
 
@@ -2635,6 +2650,7 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
   real :: Kv_back_z  ! A background kinematic viscosity [Z2 T-1 ~> m2 s-1]
   integer :: default_answer_date  ! The default setting for the various ANSWER_DATE flags.
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB, nz
+  logical :: lfpmix
   character(len=200) :: kappa_gl90_file, inputdir, kdgl90_varname
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
@@ -2658,6 +2674,9 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
   IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
 
   CS%diag => diag ; CS%ntrunc => ntrunc ; ntrunc = 0
+
+  lfpmix = .false.
+  if (present(fpmix)) lfpmix = fpmix
 
 ! Default, read and log parameters
   call log_version(param_file, mdl, version, "", log_to_all=.true., debugging=.true.)
@@ -2961,20 +2980,29 @@ subroutine vertvisc_init(MIS, Time, G, GV, US, param_file, diag, ADp, dirs, &
       'Mixed Layer Thickness at Meridional Velocity Points for Viscosity', &
       thickness_units, conversion=US%Z_to_m)
 
-  CS%id_FPw2x   = register_diag_field('ocean_model', 'FPw2x', diag%axesT1, Time, &
-      'Wind direction from x-axis','radians')
-  CS%id_tauFP_u = register_diag_field('ocean_model', 'tauFP_u', diag%axesCui, Time, &
-      'Stress Mag Profile  (u-points)', 'm2 s-2')
-  CS%id_tauFP_v = register_diag_field('ocean_model', 'tauFP_v', diag%axesCvi, Time, &
-      'Stress Mag Profile  (v-points)', 'm2 s-2')
-  CS%id_FPtau2s_u = register_diag_field('ocean_model', 'FPtau2s_u', diag%axesCui, Time, &
-      'stress from shear direction (u-points)', 'radians ')
-  CS%id_FPtau2s_v = register_diag_field('ocean_model', 'FPtau2s_v', diag%axesCvi, Time, &
-      'stress from shear direction (v-points)', 'radians')
-  CS%id_FPtau2w_u = register_diag_field('ocean_model', 'FPtau2w_u', diag%axesCui, Time, &
-      'stress from wind  direction (u-points)', 'radians')
-  CS%id_FPtau2w_v = register_diag_field('ocean_model', 'FPtau2w_v', diag%axesCvi, Time, &
-      'stress from wind  direction (v-points)', 'radians')
+ if (lfpmix) then
+  CS%id_uE_h = register_diag_field('ocean_model', 'uE_h' , CS%diag%axesTL, &
+      Time, 'x-zonal Eulerian' , 'm s-1', conversion=US%L_T_to_m_s)
+  CS%id_vE_h = register_diag_field('ocean_model', 'vE_h' , CS%diag%axesTL, &
+      Time, 'y-merid Eulerian' , 'm s-1', conversion=US%L_T_to_m_s)
+  CS%id_uInc_h = register_diag_field('ocean_model','uInc_h',CS%diag%axesTL, &
+      Time, 'x-zonal Eulerian' , 'm s-1', conversion=US%L_T_to_m_s)
+  CS%id_vInc_h = register_diag_field('ocean_model','vInc_h',CS%diag%axesTL, &
+      Time, 'x-zonal Eulerian' , 'm s-1', conversion=US%L_T_to_m_s)
+  CS%id_uStk = register_diag_field('ocean_model', 'uStk' , CS%diag%axesTL, &
+      Time, 'x-FP du increment' , 'm s-1', conversion=US%L_T_to_m_s)
+  CS%id_vStk = register_diag_field('ocean_model', 'vStk' , CS%diag%axesTL, &
+      Time, 'y-FP dv increment' , 'm s-1', conversion=US%L_T_to_m_s)
+
+  CS%id_FPtau2s = register_diag_field('ocean_model','Omega_tau2s',CS%diag%axesTi, &
+      Time, 'Stress direction from shear','radians')
+  CS%id_FPtau2w = register_diag_field('ocean_model','Omega_tau2w',CS%diag%axesTi, &
+      Time, 'Stress direction from wind','radians')
+  CS%id_uStk0 = register_diag_field('ocean_model', 'uStk0' , diag%axesT1, &
+      Time, 'Zonal Surface Stokes', 'm s-1', conversion=US%L_T_to_m_s)
+  CS%id_vStk0 = register_diag_field('ocean_model', 'vStk0' , diag%axesT1, &
+      Time, 'Merid Surface Stokes', 'm s-1', conversion=US%L_T_to_m_s)
+  endif
 
   CS%id_du_dt_visc = register_diag_field('ocean_model', 'du_dt_visc', diag%axesCuL, Time, &
       'Zonal Acceleration from Vertical Viscosity', 'm s-2', conversion=US%L_T2_to_m_s2)
