@@ -227,8 +227,8 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
   real :: g_Rho0          ! G_Earth/Rho0 times a thickness conversion factor
                           ! [L2 H-1 T-2 R-1 ~> m4 s-2 kg-1 or m7 s-2 kg-2]
   real :: rho_ml(SZI_(G)) ! Potential density relative to the surface [R ~> kg m-3]
-  real :: rml_int_fast(SZI_(G)) ! The integral of density over the mixed layer depth [R H ~> kg m-2 or kg2 m-3]
-  real :: rml_int_slow(SZI_(G)) ! The integral of density over the mixed layer depth [R H ~> kg m-2 or kg2 m-3]
+  real :: rml_int_fast(SZI_(G)) ! The integral of density over the mixed layer depth [R H ~> kg m-2 or kg2 m-5]
+  real :: rml_int_slow(SZI_(G)) ! The integral of density over the mixed layer depth [R H ~> kg m-2 or kg2 m-5]
   real :: SpV_ml(SZI_(G)) ! Specific volume evaluated at the surface pressure [R-1 ~> m3 kg-1]
   real :: SpV_int_fast(SZI_(G)) ! Specific volume integrated through the mixed layer [H R-1 ~> m4 kg-1 or m]
   real :: SpV_int_slow(SZI_(G)) ! Specific volume integrated through the mixed layer [H R-1 ~> m4 kg-1 or m]
@@ -364,7 +364,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
     do j=js,je ; do i=is,ie
       if ((G%mask2dT(i,j) > 0.0) .and. (mle_fl_2d(i,j) < 0.0)) then
         write(mesg,'(" Time_interp negative MLE frontal-length scale of ",(1pe12.4)," at i,j = ",&
-                  & 2(i3), "lon/lat = ",(1pe12.4)," E ", (1pe12.4), " N.")') &
+                  & I0,", ",I0," lon/lat = ",(1pe12.4)," E ", (1pe12.4), " N.")') &
                   mle_fl_2d(i,j), i, j, G%geoLonT(i,j), G%geoLatT(i,j)
         call MOM_error(FATAL, "MOM_mixed_layer_restrat mixedlayer_restrat_OM4: "//trim(mesg))
       endif
@@ -488,7 +488,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
     u_star = max(CS%ustar_min, 0.5*(U_star_2d(i,j) + U_star_2d(i+1,j)))
 
     absf = 0.5*(abs(G%CoriolisBu(I,J-1)) + abs(G%CoriolisBu(I,J)))
-    ! Compute I_LFront = 1 / (frontal length scale) [m-1]
+    ! Compute I_LFront = 1 / (frontal length scale) [L-1 ~> m-1]
     lfront = 0.5 * (mle_fl_2d(i,j) + mle_fl_2d(i+1,j))
     ! Adcroft reciprocal
     I_LFront = 0.0 ; if (lfront /= 0.0) I_LFront = 1.0/lfront
@@ -577,7 +577,7 @@ subroutine mixedlayer_restrat_OM4(h, uhtr, vhtr, tv, forces, dt, h_MLD, VarMix, 
   !$OMP do
   do J=js-1,je ; do i=is,ie
     u_star = max(CS%ustar_min, 0.5*(U_star_2d(i,j) + U_star_2d(i,j+1)))
-    ! Compute I_LFront = 1 / (frontal length scale) [m-1]
+    ! Compute I_LFront = 1 / (frontal length scale) [L-1 ~> m-1]
     lfront = 0.5 * (mle_fl_2d(i,j) + mle_fl_2d(i,j+1))
     ! Adcroft reciprocal
     I_LFront = 0.0 ; if (lfront /= 0.0) I_LFront = 1.0/lfront
@@ -813,7 +813,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
   real :: grid_dsd        ! combination of grid scales [L2 ~> m2]
   real :: h_sml           ! "Little h", the active mixing depth with diurnal cycle removed [H ~> m or kg m-2]
   real :: h_big           ! "Big H", the mixed layer depth based on a time filtered "little h" [H ~> m or kg m-2]
-  real :: grd_b           ! The vertically average gradient of buoyancy [L H-1 T-2 ~> s-2 or m-3 kg-1 s-2]
+  real :: grd_b           ! The vertically average gradient of buoyancy [L H-1 T-2 ~> s-2 or m3 kg-1 s-2]
   real :: psi_mag         ! Magnitude of stream function [L2 H T-1 ~> m3 s-1 or kg s-1]
   real :: h_neglect       ! tiny thickness usually lost in roundoff so can be neglected [H ~> m or kg m-2]
   real :: I4dt            ! 1/(4 dt) [T-1 ~> s-1]
@@ -1183,7 +1183,7 @@ subroutine mixedlayer_restrat_Bodner(CS, G, GV, US, h, uhtr, vhtr, tv, forces, d
 
 end subroutine mixedlayer_restrat_Bodner
 
-!> Two time-scale running mean [units of "signal" and "filtered"]
+!> Two time-scale running mean in the same arbitrary units as "signal" and "filtered"
 !!
 !! If signal > filtered, returns running-mean with time scale "tau_growing".
 !! If signal <= filtered, returns running-mean with time scale "tau_decaying".
@@ -1197,8 +1197,8 @@ end subroutine mixedlayer_restrat_Bodner
 !! rmean2ts with tau_growing=0 recovers the "resetting running mean" used in OM4.
 real elemental function rmean2ts(signal, filtered, tau_growing, tau_decaying, dt)
   ! Arguments
-  real, intent(in) :: signal       ! Unfiltered signal [arbitrary units]
-  real, intent(in) :: filtered     ! Current value of running mean [arbitrary units]
+  real, intent(in) :: signal       ! Unfiltered signal in arbitrary units [A]
+  real, intent(in) :: filtered     ! Current value of running mean in the same arbitrary units [A]
   real, intent(in) :: tau_growing  ! Time scale for growing signal [T ~> s]
   real, intent(in) :: tau_decaying ! Time scale for decaying signal [T ~> s]
   real, intent(in) :: dt           ! Time step [T ~> s]
@@ -1251,7 +1251,7 @@ subroutine mixedlayer_restrat_BML(h, uhtr, vhtr, tv, forces, dt, G, GV, US, CS)
   real :: g_Rho0          ! G_Earth/Rho0 times a thickness conversion factor
                           ! [L2 H-1 T-2 R-1 ~> m4 s-2 kg-1 or m7 s-2 kg-2]
   real :: Rho_ml(SZI_(G)) ! Potential density relative to the surface [R ~> kg m-3]
-  real :: rho_int(SZI_(G)) ! The integral of density over the mixed layer depth [R H ~> kg m-2 or kg2 m-3]
+  real :: rho_int(SZI_(G)) ! The integral of density over the mixed layer depth [R H ~> kg m-2 or kg2 m-5]
   real :: SpV_ml(SZI_(G)) ! Specific volume evaluated at the surface pressure [R-1 ~> m3 kg-1]
   real :: SpV_int(SZI_(G)) ! Specific volume integrated through the surface layer [H R-1 ~> m4 kg-1 or m]
   real :: p0(SZI_(G))     ! A pressure of 0 [R L2 T-2 ~> Pa]

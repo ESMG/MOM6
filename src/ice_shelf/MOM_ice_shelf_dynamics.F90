@@ -1085,7 +1085,7 @@ subroutine IS_dynamics_post_data(time_step, Time, CS, ISS, G)
   real, dimension(SZDI_(G),SZDJ_(G))  :: ice_visc ! area-averaged vertically integrated ice viscosity
                                                   !! [R L2 Z T-1 ~> Pa s m]
   real, dimension(SZDI_(G),SZDJ_(G))  :: basal_tr ! area-averaged taub_beta field related to basal traction,
-                                                  !! [R L1 T-1 ~> Pa s m-1]
+                                                  !! [R L T-1 ~> Pa s m-1]
   real, dimension(SZDIB_(G),SZDJB_(G)) :: surf_slope ! the surface slope of the ice shelf/sheet [nondim]
   real, dimension(SZDIB_(G),SZDJB_(G)) :: ice_speed ! ice sheet flow speed [L T-1 ~> m s-1]
 
@@ -1299,10 +1299,8 @@ subroutine write_ice_shelf_energy(CS, G, US, mass, area, day, time_step)
     elseif (reday < 1.0e11) then ; write(day_str, '(F15.3)') reday
     else ;                         write(day_str, '(ES15.9)') reday ; endif
 
-    if     (CS%prev_IS_energy_calls < 1000000)   then ; write(n_str, '(I6)') CS%prev_IS_energy_calls
-    elseif (CS%prev_IS_energy_calls < 10000000)  then ; write(n_str, '(I7)') CS%prev_IS_energy_calls
-    elseif (CS%prev_IS_energy_calls < 100000000) then ; write(n_str, '(I8)') CS%prev_IS_energy_calls
-    else                        ; write(n_str, '(I10)') CS%prev_IS_energy_calls ; endif
+    if (CS%prev_IS_energy_calls < 1000000) then ; write(n_str, '(I6)') CS%prev_IS_energy_calls
+    else ; write(n_str, '(I0)') CS%prev_IS_energy_calls ; endif
 
     write(CS%IS_fileenergy_ascii,'(A,",",A,", En ",ES22.16,", M ",ES11.5)') &
       trim(n_str), trim(day_str), US%L_T_to_m_s**2*KE_tot/mass_tot, US%RZL2_to_kg*mass_tot
@@ -2540,7 +2538,7 @@ subroutine calc_shelf_driving_stress(CS, ISS, G, US, taudx, taudy, OD)
         endif
 
         if (CS%max_surface_slope>0) then
-          scale = min(CS%max_surface_slope/sqrt((sx**2)+(sy**2)),1.0)
+          scale = CS%max_surface_slope / max( sqrt((sx**2) + (sy**2)), CS%max_surface_slope )
           sx = scale*sx; sy = scale*sy
         endif
 
@@ -3289,9 +3287,9 @@ subroutine calc_shelf_visc(CS, ISS, G, US, u_shlf, v_shlf)
           CS%ice_visc(i,j,1) = (G%areaT(i,j) * max(ISS%h_shelf(i,j),CS%min_h_shelf)) * &
                                max(CS%AGlen_visc(i,j) ,CS%min_ice_visc)
         endif
-        ! Here CS%Aglen_visc(i,j) is the ice viscosity [Pa s ~> R L2 T-1] computed from obs and read from a file
+        ! Here CS%Aglen_visc(i,j) is the ice viscosity [R L2 T-1 ~> Pa s] computed from obs and read from a file
       elseif (model_qp1) then
-        !calculate viscosity at 1 cell-centered quadrature point per cell
+        ! calculate viscosity at 1 cell-centered quadrature point per cell
 
         Visc_coef = (CS%AGlen_visc(i,j))**(-1./n_g)
         ! Units of Aglen_visc [Pa-(n_g) s-1]

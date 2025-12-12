@@ -53,6 +53,7 @@ use regrid_edge_values,   only : edge_values_implicit_h4
 use PLM_functions,        only : PLM_reconstruction, PLM_boundary_extrapolation
 use PLM_functions,        only : PLM_extrapolate_slope, PLM_monotonized_slope, PLM_slope_wa
 use PPM_functions,        only : PPM_reconstruction, PPM_boundary_extrapolation
+use Recon1d_PLM_WLS,      only : PLM_WLS
 
 implicit none ; private
 #include <MOM_memory.h>
@@ -140,6 +141,7 @@ public ALE_remap_vertex_vals
 public ALE_PLM_edge_values
 public TS_PLM_edge_values
 public TS_PPM_edge_values
+public TS_PLM_WLS_edge_values
 public adjustGridForIntegrity
 public ALE_initRegridding
 public ALE_getCoordinate
@@ -165,8 +167,9 @@ contains
 !! before the main time integration loop to initialize the regridding stuff.
 !! We read the MOM_input file to register the values of different
 !! regridding/remapping parameters.
-subroutine ALE_init( param_file, GV, US, max_depth, CS)
+subroutine ALE_init( param_file, G, GV, US, max_depth, CS)
   type(param_file_type),   intent(in) :: param_file !< Parameter file
+  type(ocean_grid_type),   intent(in) :: G          !< Grid structure
   type(verticalGrid_type), intent(in) :: GV         !< Ocean vertical grid structure
   type(unit_scale_type),   intent(in) :: US         !< A dimensional unit scaling type
   real,                    intent(in) :: max_depth  !< The maximum depth of the ocean [Z ~> m].
@@ -205,8 +208,9 @@ subroutine ALE_init( param_file, GV, US, max_depth, CS)
                  default=.false.)
 
   ! Initialize and configure regridding
-  call ALE_initRegridding(GV, US, max_depth, param_file, mdl, CS%regridCS)
-  call regridding_preadjust_reqs(CS%regridCS, CS%do_conv_adj, CS%use_hybgen_unmix, hybgen_CS=hybgen_regridCS)
+  call ALE_initRegridding(G, GV, US, max_depth, param_file, mdl, CS%regridCS)
+  call regridding_preadjust_reqs(CS%regridCS, CS%do_conv_adj, CS%use_hybgen_unmix, &
+                                 hybgen_CS=hybgen_regridCS)
 
   ! Initialize and configure remapping that is orchestrated by ALE.
   call get_param(param_file, mdl, "REMAPPING_SCHEME", string, &
@@ -321,12 +325,12 @@ subroutine ALE_init( param_file, GV, US, max_depth, CS)
                  default=-0.001, units="m", scale=GV%m_to_H)
   call get_param(param_file, mdl, "REMAP_VEL_MASK_H_THIN", CS%h_vel_mask, &
                  "A thickness at velocity points below which near-bottom layers are zeroed out "//&
-                 "after remapping, following practice with Hybgen remapping, or a negative value "//&
-                 "to avoid such filtering altogether.", &
+                 "after remapping, following practice with Hybgen remapping, "//&
+                 "or a negative value to avoid such filtering altogether.", &
                  default=1.0e-6, units="m", scale=GV%m_to_H, do_not_log=(CS%BBL_h_vel_mask<=0.0))
 
   if (CS%use_hybgen_unmix) &
-    call init_hybgen_unmix(CS%hybgen_unmixCS, GV, US, param_file, hybgen_regridCS)
+      call init_hybgen_unmix(CS%hybgen_unmixCS, GV, US, param_file, hybgen_regridCS)
 
   call get_param(param_file, mdl, "REMAP_VEL_CONSERVE_KE", CS%conserve_ke, &
                  "If true, a correction is applied to the baroclinic component of velocity "//&
@@ -640,7 +644,8 @@ end subroutine ALE_offline_inputs
 
 !> For a state-based coordinate, accelerate the process of regridding by
 !! repeatedly applying the grid calculation algorithm
-subroutine ALE_regrid_accelerated(CS, G, GV, US, h, tv, n_itt, u, v, OBC, Reg, dt, dzRegrid, initial)
+subroutine ALE_regrid_accelerated(CS, G, GV, US, h, tv, n_itt, u, v, OBC, Reg, dt, &
+                                  dzRegrid, initial)
   type(ALE_CS),            pointer       :: CS     !< ALE control structure
   type(ocean_grid_type),   intent(inout) :: G      !< Ocean grid
   type(verticalGrid_type), intent(in)    :: GV     !< Vertical grid
@@ -689,7 +694,7 @@ subroutine ALE_regrid_accelerated(CS, G, GV, US, h, tv, n_itt, u, v, OBC, Reg, d
 
   ! initial total interface displacement due to successive regridding
   if (CS%remap_uv_using_old_alg) &
-    dzIntTotal(:,:,:) = 0.
+      dzIntTotal(:,:,:) = 0.
 
   call create_group_pass(pass_T_S_h, T, G%domain)
   call create_group_pass(pass_T_S_h, S, G%domain)
@@ -708,7 +713,7 @@ subroutine ALE_regrid_accelerated(CS, G, GV, US, h, tv, n_itt, u, v, OBC, Reg, d
 
   ! Apply timescale to regridding (for e.g. filtered_grid_motion)
   if (present(dt)) &
-    call ALE_update_regrid_weights(dt, CS)
+      call ALE_update_regrid_weights(dt, CS)
 
   do itt = 1, n_itt
 
@@ -722,12 +727,14 @@ subroutine ALE_regrid_accelerated(CS, G, GV, US, h, tv, n_itt, u, v, OBC, Reg, d
 
     call regridding_main(CS%remapCS, CS%regridCS, G, GV, US, h_loc, tv_local, h, dzInterface)
     if (CS%remap_uv_using_old_alg) &
-      dzIntTotal(:,:,:) = dzIntTotal(:,:,:) + dzInterface(:,:,:)
+        dzIntTotal(:,:,:) = dzIntTotal(:,:,:) + dzInterface(:,:,:)
 
     ! remap from original grid onto new grid
     do j = G%jsc-1,G%jec+1 ; do i = G%isc-1,G%iec+1
-      call remapping_core_h(CS%remapCS, nz, h_orig(i,j,:), tv%S(i,j,:), nz, h(i,j,:), tv_local%S(i,j,:))
-      call remapping_core_h(CS%remapCS, nz, h_orig(i,j,:), tv%T(i,j,:), nz, h(i,j,:), tv_local%T(i,j,:))
+      call remapping_core_h(CS%remapCS, nz, h_orig(i,j,:), tv%S(i,j,:), nz, h(i,j,:), &
+                            tv_local%S(i,j,:))
+      call remapping_core_h(CS%remapCS, nz, h_orig(i,j,:), tv%T(i,j,:), nz, h(i,j,:), &
+                            tv_local%T(i,j,:))
     enddo ; enddo
 
     ! starting grid for next iteration
@@ -1038,30 +1045,46 @@ subroutine ALE_remap_set_h_vel_OBC(G, GV, h_new, h_u, h_v, OBC)
   type(ocean_OBC_type),                      pointer       :: OBC          !< Open boundary structure
 
   ! Local variables
-  integer :: i, j, k, nz
+  integer :: i, j, k, nz, is_OBC, ie_OBC, js_OBC, je_OBC
 
   if (.not.associated(OBC)) return
 
   nz = GV%ke
 
-    ! Take open boundary conditions into account.
+  ! Take open boundary conditions into account.
+  if (OBC%u_E_OBCs_on_PE) then
+    js_OBC = max(G%jsc,  OBC%js_u_E_obc) ; je_OBC = min(G%jec,  OBC%je_u_E_obc)
+    Is_OBC = max(G%IscB, OBC%Is_u_E_obc) ; Ie_OBC = min(G%IecB, OBC%Ie_u_E_obc)
     !$OMP parallel do default(shared)
-    do j=G%jsc,G%jec ; do I=G%IscB,G%IecB ; if (OBC%segnum_u(I,j) /= 0) then
-      if (OBC%segment(OBC%segnum_u(I,j))%direction == OBC_DIRECTION_E) then
-        do k=1,nz ; h_u(I,j,k) = h_new(i,j,k) ; enddo
-      else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
-        do k=1,nz ; h_u(I,j,k) = h_new(i+1,j,k) ; enddo
-      endif
+    do j=js_OBC,je_OBC ; do I=Is_OBC,Ie_OBC ; if (OBC%segnum_u(I,j) > 0) then !  OBC_DIRECTION_E
+      do k=1,nz ; h_u(I,j,k) = h_new(i,j,k) ; enddo
     endif ; enddo ; enddo
+  endif
+  if (OBC%u_W_OBCs_on_PE) then
+    js_OBC = max(G%jsc,  OBC%js_u_W_obc) ; je_OBC = min(G%jec,  OBC%je_u_W_obc)
+    Is_OBC = max(G%IscB, OBC%Is_u_W_obc) ; Ie_OBC = min(G%IecB, OBC%Ie_u_W_obc)
+    !$OMP parallel do default(shared)
+    do j=js_OBC,je_OBC ; do I=Is_OBC,Ie_OBC ; if (OBC%segnum_u(I,j) < 0) then !  OBC_DIRECTION_W
+      do k=1,nz ; h_u(I,j,k) = h_new(i+1,j,k) ; enddo
+    endif ; enddo ; enddo
+  endif
 
+  if (OBC%v_N_OBCs_on_PE) then
+    Js_OBC = max(G%JscB, OBC%Js_v_N_obc) ; Je_OBC = min(G%JecB, OBC%Je_v_N_obc)
+    is_OBC = max(G%isc,  OBC%is_v_N_obc) ; ie_OBC = min(G%iec,  OBC%ie_v_N_obc)
     !$OMP parallel do default(shared)
-    do J=G%JscB,G%JecB ; do i=G%isc,G%iec ; if (OBC%segnum_v(i,J) /= 0) then
-      if (OBC%segment(OBC%segnum_v(i,J))%direction == OBC_DIRECTION_N) then
-        do k=1,nz ; h_v(i,J,k) = h_new(i,j,k) ; enddo
-      else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
-        do k=1,nz ; h_v(i,J,k) = h_new(i,j+1,k) ; enddo
-      endif
+    do J=Js_OBC,Je_OBC ; do i=is_OBC,ie_OBC ; if (OBC%segnum_v(i,J) > 0) then !  OBC_DIRECTION_N
+      do k=1,nz ; h_v(i,J,k) = h_new(i,j,k) ; enddo
     endif ; enddo ; enddo
+  endif
+  if (OBC%v_S_OBCs_on_PE) then
+    Js_OBC = max(G%JscB, OBC%Js_v_S_obc) ; Je_OBC = min(G%JecB, OBC%Je_v_S_obc)
+    is_OBC = max(G%isc,  OBC%is_v_S_obc) ; ie_OBC = min(G%iec,  OBC%ie_v_S_obc)
+    !$OMP parallel do default(shared)
+    do J=Js_OBC,Je_OBC ; do i=is_OBC,ie_OBC ; if (OBC%segnum_v(i,J) < 0) then !  OBC_DIRECTION_S
+      do k=1,nz ; h_v(i,J,k) = h_new(i,j+1,k) ; enddo
+    endif ; enddo ; enddo
+  endif
 
 end subroutine ALE_remap_set_h_vel_OBC
 
@@ -1130,7 +1153,7 @@ subroutine ALE_remap_velocities(CS, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u
   if (CS%id_remap_delta_integ_v2>0) dv2h_tot(:,:) = 0.
 
   if (((CS%id_remap_delta_integ_u2>0) .or. (CS%id_remap_delta_integ_v2>0)) .and. .not.present(dt))&
-    call MOM_error(FATAL, "ALE KE diagnostics requires passing dt into ALE_remap_velocities")
+      call MOM_error(FATAL, "ALE KE diagnostics requires passing dt into ALE_remap_velocities")
 
   nz = GV%ke
 
@@ -1163,9 +1186,9 @@ subroutine ALE_remap_velocities(CS, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u
       ! First get barotropic component
       u_bt = 0.0
       do k=1,nz
-        u_bt = u_bt + h2(k) * u_tgt(k) ! Dimensions [H L T-1]
+        u_bt = u_bt + h2(k) * u_tgt(k) ! Dimensions [H L T-1 ~> m2 s-1 or kg m-1 s-1]
       enddo
-      u_bt = u_bt / (sum(h2(1:nz)) + GV%H_subroundoff) ! Dimensions return to [L T-1]
+      u_bt = u_bt / (sum(h2(1:nz)) + GV%H_subroundoff) ! Dimensions return to [L T-1 ~> m s-1]
       ! Next get baroclinic ke = \int (u-u_bt)^2 from source and target
       ke_c_src = 0.0
       ke_c_tgt = 0.0
@@ -1196,7 +1219,7 @@ subroutine ALE_remap_velocities(CS, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u
     endif
 
     if ((CS%BBL_h_vel_mask > 0.0) .and. (CS%h_vel_mask > 0.0)) &
-      call mask_near_bottom_vel(u_tgt, h2, CS%BBL_h_vel_mask, CS%h_vel_mask, nz)
+        call mask_near_bottom_vel(u_tgt, h2, CS%BBL_h_vel_mask, CS%h_vel_mask, nz)
 
     ! Copy the column of new velocities back to the 3-d array
     do k=1,nz
@@ -1238,9 +1261,9 @@ subroutine ALE_remap_velocities(CS, G, GV, h_old_u, h_old_v, h_new_u, h_new_v, u
       ! First get barotropic component
       v_bt = 0.0
       do k=1,nz
-        v_bt = v_bt + h2(k) * v_tgt(k) ! Dimensions [H L T-1]
+        v_bt = v_bt + h2(k) * v_tgt(k) ! Dimensions [H L T-1 ~> m2 s-1 or kg m-1 s-1]
       enddo
-      v_bt = v_bt / (sum(h2(1:nz)) + GV%H_subroundoff) ! Dimensions return to [L T-1]
+      v_bt = v_bt / (sum(h2(1:nz)) + GV%H_subroundoff) ! Dimensions return to [L T-1 ~> m s-1]
       ! Next get baroclinic ke = \int (u-u_bt)^2 from source and target
       ke_c_src = 0.0
       ke_c_tgt = 0.0
@@ -1345,13 +1368,14 @@ subroutine ALE_remap_vertex_vals(CS, G, GV, h_old, h_new, vert_val)
 
   do J=G%JscB,G%JecB ; do I=G%IscB,G%IecB
     if ((G%mask2dT(i,j) + G%mask2dT(i+1,j+1)) + (G%mask2dT(i+1,j) + G%mask2dT(i,j+1)) > 0.0 ) then
-      I_mask_sum = 1.0 / ((G%mask2dT(i,j) + G%mask2dT(i+1,j+1)) + (G%mask2dT(i+1,j) + G%mask2dT(i,j+1)))
+      I_mask_sum = 1.0 / ((G%mask2dT(i,j) + G%mask2dT(i+1,j+1)) + &
+                          (G%mask2dT(i+1,j) + G%mask2dT(i,j+1)))
 
     do k=1,nz
       h_src(k) = ((G%mask2dT(i,j) * h_old(i,j,k) + G%mask2dT(i+1,j+1) * h_old(i+1,j+1,k)) + &
-                  (G%mask2dT(i+1,j) * h_old(i+1,j,k) + G%mask2dT(i,j+1) * h_old(i,j+1,k)) ) * I_mask_sum
+          (G%mask2dT(i+1,j) * h_old(i+1,j,k) + G%mask2dT(i,j+1) * h_old(i,j+1,k)) ) * I_mask_sum
       h_tgt(k) = ((G%mask2dT(i,j) * h_new(i,j,k) + G%mask2dT(i+1,j+1) * h_new(i+1,j+1,k)) + &
-                  (G%mask2dT(i+1,j) * h_new(i+1,j,k) + G%mask2dT(i,j+1) * h_new(i,j+1,k)) ) * I_mask_sum
+          (G%mask2dT(i+1,j) * h_new(i+1,j,k) + G%mask2dT(i,j+1) * h_new(i,j+1,k)) ) * I_mask_sum
     enddo
 
     do K=1,nz+1
@@ -1533,7 +1557,8 @@ subroutine ALE_PLM_edge_values( CS, G, GV, h, Q, bdry_extrap, Q_t, Q_b )
   do j = G%jsc-1,G%jec+1 ; do i = G%isc-1,G%iec+1
     slp(1) = 0.
     do k = 2, GV%ke-1
-      slp(k) = PLM_slope_wa(h(i,j,k-1), h(i,j,k), h(i,j,k+1), h_neglect, Q(i,j,k-1), Q(i,j,k), Q(i,j,k+1))
+      slp(k) = PLM_slope_wa(h(i,j,k-1), h(i,j,k), h(i,j,k+1), h_neglect, &
+                            Q(i,j,k-1), Q(i,j,k), Q(i,j,k+1))
     enddo
     slp(GV%ke) = 0.
 
@@ -1546,7 +1571,8 @@ subroutine ALE_PLM_edge_values( CS, G, GV, h, Q, bdry_extrap, Q_t, Q_b )
       mslp = - PLM_extrapolate_slope(h(i,j,2), h(i,j,1), h_neglect, Q(i,j,2), Q(i,j,1))
       Q_t(i,j,1) = Q(i,j,1) - 0.5 * mslp
       Q_b(i,j,1) = Q(i,j,1) + 0.5 * mslp
-      mslp = PLM_extrapolate_slope(h(i,j,GV%ke-1), h(i,j,GV%ke), h_neglect, Q(i,j,GV%ke-1), Q(i,j,GV%ke))
+      mslp = PLM_extrapolate_slope(h(i,j,GV%ke-1), h(i,j,GV%ke), h_neglect, &
+                                   Q(i,j,GV%ke-1), Q(i,j,GV%ke))
       Q_t(i,j,GV%ke) = Q(i,j,GV%ke) - 0.5 * mslp
       Q_b(i,j,GV%ke) = Q(i,j,GV%ke) + 0.5 * mslp
     else
@@ -1583,11 +1609,11 @@ subroutine TS_PPM_edge_values( CS, S_t, S_b, T_t, T_b, G, GV, tv, h, bdry_extrap
   ! Local variables
   integer :: i, j, k
   real    :: hTmp(GV%ke) ! A 1-d copy of h [H ~> m or kg m-2]
-  real    :: tmp(GV%ke)  ! A 1-d copy of a column of temperature [degC] or salinity [ppt]
+  real    :: tmp(GV%ke)  ! A 1-d copy of a column of temperature [C ~> degC] or salinity [S ~> ppt]
   real, dimension(CS%nk,2) :: &
-      ppol_E            ! Edge value of polynomial in [degC] or [ppt]
+      ppol_E            ! Edge value of polynomial in [C ~> degC] or [S ~> ppt]
   real, dimension(CS%nk,3) :: &
-      ppol_coefs        ! Coefficients of polynomial, all in [degC] or [ppt]
+      ppol_coefs        ! Coefficients of polynomial, all in [C ~> degC] or [S ~> ppt]
   real :: h_neglect, h_neglect_edge ! Tiny thicknesses [H ~> m or kg m-2]
 
   if (CS%answer_date >= 20190101) then
@@ -1614,7 +1640,7 @@ subroutine TS_PPM_edge_values( CS, S_t, S_b, T_t, T_b, G, GV, tv, h, bdry_extrap
     call PPM_reconstruction( GV%ke, hTmp, tmp, ppol_E, ppol_coefs, h_neglect, &
                                   answer_date=CS%answer_date )
     if (bdry_extrap) &
-      call PPM_boundary_extrapolation( GV%ke, hTmp, tmp, ppol_E, ppol_coefs, h_neglect )
+        call PPM_boundary_extrapolation( GV%ke, hTmp, tmp, ppol_E, ppol_coefs, h_neglect )
 
     do k = 1,GV%ke
       S_t(i,j,k) = ppol_E(k,1)
@@ -1635,7 +1661,7 @@ subroutine TS_PPM_edge_values( CS, S_t, S_b, T_t, T_b, G, GV, tv, h, bdry_extrap
     call PPM_reconstruction( GV%ke, hTmp, tmp, ppol_E, ppol_coefs, h_neglect, &
                                   answer_date=CS%answer_date )
     if (bdry_extrap) &
-      call PPM_boundary_extrapolation(GV%ke, hTmp, tmp, ppol_E, ppol_coefs, h_neglect )
+        call PPM_boundary_extrapolation(GV%ke, hTmp, tmp, ppol_E, ppol_coefs, h_neglect )
 
     do k = 1,GV%ke
       T_t(i,j,k) = ppol_E(k,1)
@@ -1646,9 +1672,49 @@ subroutine TS_PPM_edge_values( CS, S_t, S_b, T_t, T_b, G, GV, tv, h, bdry_extrap
 
 end subroutine TS_PPM_edge_values
 
+!> Calculate edge values (top and bottom of layer) for T and S consistent with a PLM reconstruction
+!! in the vertical direction that uses weighted least squares for the slope.
+subroutine TS_PLM_WLS_edge_values(CS, S_t, S_b, T_t, T_b, G, GV, tv, h)
+  type(ocean_grid_type),   intent(in)    :: G    !< ocean grid structure
+  type(verticalGrid_type), intent(in)    :: GV   !< Ocean vertical grid structure
+  type(ALE_CS),            intent(inout) :: CS   !< module control structure
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(inout) :: S_t  !< Salinity at the top edge of each layer [S ~> ppt]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(inout) :: S_b  !< Salinity at the bottom edge of each layer [S ~> ppt]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(inout) :: T_t  !< Temperature at the top edge of each layer [C ~> degC]
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(inout) :: T_b  !< Temperature at the bottom edge of each layer [C ~> degC]
+  type(thermo_var_ptrs),   intent(in)    :: tv   !< thermodynamics structure
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                           intent(in)    :: h    !< layer thickness [H ~> m or kg m-2]
+  ! Local variables
+  integer :: i, j, k
+  type(PLM_WLS) :: recon !< A PLM-WLS reconstruction
+
+  call recon%init(GV%ke, h_neglect=GV%H_subroundoff)
+
+  !$OMP parallel do default(shared) firstprivate(recon)
+  do j = G%jsc-1,G%jec+1 ; do i = G%isc-1,G%iec+1
+
+    call recon%reconstruct(h(i,j,:), tv%T(i,j,:))
+    T_t(i,j,:) = recon%ul(:)
+    T_b(i,j,:) = recon%ur(:)
+
+    call recon%reconstruct(h(i,j,:), tv%S(i,j,:))
+    S_t(i,j,:) = recon%ul(:)
+    S_b(i,j,:) = recon%ur(:)
+
+  enddo ; enddo
+
+  call recon%destroy()
+
+end subroutine TS_PLM_WLS_edge_values
 
 !> Initializes regridding for the main ALE algorithm
-subroutine ALE_initRegridding(GV, US, max_depth, param_file, mdl, regridCS)
+subroutine ALE_initRegridding(G, GV, US, max_depth, param_file, mdl, regridCS)
+  type(ocean_grid_type),   intent(in)  :: G          !< Grid structure
   type(verticalGrid_type), intent(in)  :: GV         !< Ocean vertical grid structure
   type(unit_scale_type),   intent(in)  :: US         !< A dimensional unit scaling type
   real,                    intent(in)  :: max_depth  !< The maximum depth of the ocean [Z ~> m].
@@ -1664,7 +1730,7 @@ subroutine ALE_initRegridding(GV, US, max_depth, param_file, mdl, regridCS)
                  trim(regriddingCoordinateModeDoc), &
                  default=DEFAULT_COORDINATE_MODE, fail_if_missing=.true.)
 
-  call initialize_regridding(regridCS, GV, US, max_depth, param_file, mdl, coord_mode, '', '')
+  call initialize_regridding(regridCS, G, GV, US, max_depth, param_file, mdl, coord_mode, '', '')
 
 end subroutine ALE_initRegridding
 

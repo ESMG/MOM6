@@ -89,9 +89,9 @@ type, public :: thermo_var_ptrs
                          !! When conservative temperature is used, this is
                          !! constant and exactly 3991.86795711963 J degC-1 kg-1.
   logical :: T_is_conT = .false. !< If true, the temperature variable tv%T is
-                         !! actually the conservative temperature [degC].
+                         !! actually the conservative temperature [C ~> degC].
   logical :: S_is_absS = .false. !< If true, the salinity variable tv%S is
-                         !! actually the absolute salinity in units of [gSalt kg-1].
+                         !! actually the absolute salinity in units of [S ~> gSalt kg-1].
   real :: min_salinity   !< The minimum value of salinity when BOUND_SALINITY=True [S ~> ppt].
   real, allocatable, dimension(:,:,:) :: SpV_avg
                          !< The layer averaged in situ specific volume [R-1 ~> m3 kg-1].
@@ -101,8 +101,9 @@ type, public :: thermo_var_ptrs
   ! These arrays are accumulated fluxes for communication with other components.
   real, dimension(:,:), pointer :: frazil => NULL()
                          !< The energy needed to heat the ocean column to the
-                         !! freezing point since calculate_surface_state was2
+                         !! freezing point since calculate_surface_state was
                          !! last called [Q Z R ~> J m-2].
+  logical :: frazil_was_reset !< If true, frazil has not accumulated since it was last reset.
   real, dimension(:,:), pointer :: salt_deficit => NULL()
                          !<   The salt needed to maintain the ocean column
                          !! at a minimum salinity of MIN_SALINITY since the last time

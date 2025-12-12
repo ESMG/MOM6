@@ -21,7 +21,8 @@ use MOM_error_handler, only : MOM_error, FATAL, NOTE, WARNING, is_root_pe
 use MOM_file_parser,   only : get_param, log_param, log_version, param_file_type
 use MOM_grid,          only : ocean_grid_type
 use MOM_horizontal_regridding, only : horiz_interp_and_extrap_tracer
-use MOM_interpolate,   only : init_external_field, get_external_field_info, time_interp_external_init
+use MOM_interpolate,   only : init_external_field, time_interp_external_init
+use MOM_interpolate,   only : get_external_field_info
 use MOM_interpolate,   only : external_field
 use MOM_io,            only : axis_info
 use MOM_remapping,     only : remapping_cs, remapping_core_h, initialize_remapping
@@ -728,7 +729,7 @@ subroutine set_up_ALE_sponge_field_fixed(sp_val, G, GV, f_ptr, CS,  &
 
   CS%fldno = CS%fldno + 1
   if (CS%fldno > MAX_FIELDS_) then
-    write(mesg,'("Increase MAX_FIELDS_ to at least ",I3," in MOM_memory.h or decrease &
+    write(mesg,'("Increase MAX_FIELDS_ to at least ",I0," in MOM_memory.h or decrease &
            &the number of fields to be damped in the call to &
            &initialize_ALE_sponge." )') CS%fldno
     call MOM_error(FATAL,"set_up_ALE_sponge_field: "//mesg)
@@ -794,7 +795,7 @@ subroutine set_up_ALE_sponge_field_varying(filename, fieldname, Time, G, GV, US,
   isd = G%isd ; ied = G%ied ; jsd = G%jsd ; jed = G%jed
   CS%fldno = CS%fldno + 1
   if (CS%fldno > MAX_FIELDS_) then
-    write(mesg, '("Increase MAX_FIELDS_ to at least ",I3," in MOM_memory.h or decrease "//&
+    write(mesg, '("Increase MAX_FIELDS_ to at least ",I0," in MOM_memory.h or decrease "//&
         &"the number of fields to be damped in the call to initialize_ALE_sponge." )') CS%fldno
     call MOM_error(FATAL,"set_up_ALE_sponge_field: "//mesg)
   endif
