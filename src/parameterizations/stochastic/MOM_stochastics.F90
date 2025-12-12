@@ -53,24 +53,22 @@ type, public:: stochastic_CS
                               !! dissipation rate used to set the amplitude of SKEBS [nondim]
   real    :: skeb_frict_coef  !< If skeb_use_frict is true, then skeb_gm_coef * GM_work is added to the
                               !! dissipation rate used to set the amplitude of SKEBS [nondim]
-  real, allocatable :: skeb_diss(:,:,:) !< Dissipation rate used to set amplitude of SKEBS [L2 T-3 ~> m2 s-2]
+  real, allocatable :: skeb_diss(:,:,:) !< Dissipation rate used to set amplitude of SKEBS [L2 T-3 ~> m2 s-3]
                                         !! Index into this at h points.
   ! stochastic patterns
   real, allocatable :: sppt_wts(:,:)  !< Random pattern for ocean SPPT
-                                      !! tendencies with a number between 0 and 2
-  real, allocatable :: skeb_wts(:,:)  !< Random pattern for ocean SKEB
-  real, allocatable :: epbl1_wts(:,:) !< Random pattern for K.E. generation
-  real, allocatable :: epbl2_wts(:,:) !< Random pattern for K.E. dissipation
+                                      !! tendencies with a number between 0 and 2 [nondim]
+  real, allocatable :: skeb_wts(:,:)  !< Random pattern for ocean SKEB [nondim]
+  real, allocatable :: epbl1_wts(:,:) !< Random pattern for K.E. generation [nondim]
+  real, allocatable :: epbl2_wts(:,:) !< Random pattern for K.E. dissipation [nondim]
   type(time_type), pointer :: Time !< Pointer to model time (needed for sponges)
   type(diag_ctrl), pointer :: diag=>NULL() !< A structure that is used to regulate the
 
   ! Taper array to smoothly zero out the SKEBS velocity increment near land
-  real ALLOCABLE_, dimension(NIMEMB_PTR_,NJMEM_) :: taperCu !< Taper applied to u component of
-                                                            !! stochastic velocity increment
-                                                            !! range [0,1], [nondim]
-  real ALLOCABLE_, dimension(NIMEM_,NJMEMB_PTR_) :: taperCv !< Taper applied to v component of
-                                                            !! stochastic velocity increment
-                                                            !! range [0,1], [nondim]
+  real, allocatable :: taperCu(:,:) !< Taper applied to u component of stochastic
+                                    !! velocity increment range [0,1], [nondim]
+  real, allocatable :: taperCv(:,:) !< Taper applied to v component of stochastic
+                                    !! velocity increment range [0,1], [nondim]
 
 end type stochastic_CS
 
@@ -204,8 +202,8 @@ subroutine stochastics_init(dt, grid, GV, CS, param_file, diag, Time)
   ! Initialize the "taper" fields. These fields multiply the components of the stochastic
   ! velocity increment in such a way as to smoothly taper them to zero at land boundaries.
   if ((CS%do_skeb) .or. (CS%id_skeb_taperu > 0) .or. (CS%id_skeb_taperv > 0)) then
-    ALLOC_(CS%taperCu(grid%IsdB:grid%IedB,grid%jsd:grid%jed))
-    ALLOC_(CS%taperCv(grid%isd:grid%ied,grid%JsdB:grid%JedB))
+    allocate(CS%taperCu(grid%IsdB:grid%IedB,grid%jsd:grid%jed))
+    allocate(CS%taperCv(grid%isd:grid%ied,grid%JsdB:grid%JedB))
     ! Initialize taper from land mask
     do j=grid%jsd,grid%jed ; do I=grid%isdB,grid%iedB
       CS%taperCu(I,j) = grid%mask2dCu(I,j)

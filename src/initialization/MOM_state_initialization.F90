@@ -20,14 +20,10 @@ use MOM_grid, only : ocean_grid_type, isPointInCell
 use MOM_interface_heights, only : find_eta, dz_to_thickness, dz_to_thickness_simple
 use MOM_interface_heights, only : calc_derived_thermo
 use MOM_io, only : file_exists, field_size, MOM_read_data, MOM_read_vector, slasher
-use MOM_open_boundary, only : ocean_OBC_type, open_boundary_halo_update, set_tracer_data
-use MOM_open_boundary, only : OBC_NONE
-use MOM_open_boundary, only : open_boundary_query
-use MOM_open_boundary, only : set_tracer_data, initialize_segment_data
-use MOM_open_boundary, only : open_boundary_test_extern_h
+use MOM_open_boundary, only : ocean_OBC_type, open_boundary_test_extern_h
 use MOM_open_boundary, only : fill_temp_salt_segments, setup_OBC_tracer_reservoirs
-use MOM_open_boundary, only : update_OBC_segment_data, set_initialized_OBC_tracer_reservoirs
-!use MOM_open_boundary, only : set_3D_OBC_data
+use MOM_open_boundary, only : fill_thickness_segments
+use MOM_open_boundary, only : set_initialized_OBC_tracer_reservoirs
 use MOM_grid_initialize, only : initialize_masks, set_grid_metrics
 use MOM_restart, only : restore_state, is_new_run, copy_restart_var, copy_restart_vector
 use MOM_restart, only : restart_registry_lock, MOM_restart_CS
@@ -103,7 +99,7 @@ implicit none ; private
 
 #include <MOM_memory.h>
 
-public MOM_initialize_state
+public MOM_initialize_state, MOM_initialize_OBCs
 
 ! A note on unit descriptions in comments: MOM6 uses units that can be rescaled for dimensional
 ! consistency testing. These are noted in comments with units like Z, H, L, and T, along with
@@ -118,7 +114,8 @@ contains
 !! conditions or by reading them from a restart (or saves) file.
 subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
                                 restart_CS, ALE_CSp, tracer_Reg, sponge_CSp, &
-                                ALE_sponge_CSp, oda_incupd_CSp, OBC, Time_in, frac_shelf_h, mass_shelf)
+                                ALE_sponge_CSp, oda_incupd_CSp, OBC_for_remap, &
+                                Time_in, frac_shelf_h, mass_shelf, OBC_for_bug)
   type(ocean_grid_type),      intent(inout) :: G    !< The ocean's grid structure.
   type(verticalGrid_type),    intent(in)    :: GV   !< The ocean's vertical grid structure.
   type(unit_scale_type),      intent(in)    :: US   !< A dimensional unit scaling type
@@ -142,7 +139,10 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   type(tracer_registry_type), pointer       :: tracer_Reg !< A pointer to the tracer registry
   type(sponge_CS),            pointer       :: sponge_CSp !< The layerwise sponge control structure.
   type(ALE_sponge_CS),        pointer       :: ALE_sponge_CSp !< The ALE sponge control structure.
-  type(ocean_OBC_type),       pointer       :: OBC   !< The open boundary condition control structure.
+  type(ocean_OBC_type),       pointer       :: OBC_for_remap !< The open boundary condition control
+                                                    !! structure that may be used for remapping velocities.
+                                                    !! This must be on the unrotated grid, but only the
+                                                    !! position and directions of the OBC faces are used.
   type(oda_incupd_CS),        pointer       :: oda_incupd_CSp !< The oda_incupd control structure.
   type(time_type), optional,  intent(in)    :: Time_in !< Time at the start of the run segment.
   real, dimension(SZI_(G),SZJ_(G)), &
@@ -150,7 +150,10 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
                                                                !! by a floating ice shelf [nondim].
   real, dimension(SZI_(G),SZJ_(G)), &
                      optional, intent(in)   :: mass_shelf      !< The mass per unit area of the overlying
-                                                               !! ice shelf [ R Z ~> kg m-2 ]
+                                                               !! ice shelf [R Z ~> kg m-2]
+  type(ocean_OBC_type), optional, pointer   :: OBC_for_bug  !< An open boundary condition control structure
+                                                    !! that might be used to store OBC temperatures and
+                                                    !! salinities if OBC_RESERVOIR_INIT_BUG is true.
   ! Local variables
   real :: depth_tot(SZI_(G),SZJ_(G))   ! The nominal total depth of the ocean [Z ~> m]
   real :: dz(SZI_(G),SZJ_(G),SZK_(GV)) ! The layer thicknesses in geopotential (z) units [Z ~> m]
@@ -162,7 +165,7 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
 
   logical :: from_Z_file, useALE
   logical :: new_sim, rotate_index
-  logical :: use_temperature, use_sponge, use_OBC, use_oda_incupd
+  logical :: use_temperature, use_sponge, use_oda_incupd
   logical :: verify_restart_time
   logical :: OBC_reservoir_init_bug  ! If true, set the OBC tracer reservoirs at the startup of a new
                          ! run from the interior tracer concentrations regardless of properties that
@@ -182,8 +185,6 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
                           ! recreate the bugs, or if false bugs are only used if actively selected.
   logical :: debug      ! If true, write debugging output.
-  logical :: debug_obc  ! If true, do additional calls resetting values to help debug the correctness
-                        ! of the open boundary condition code.
   logical :: debug_layers = .false.
   logical :: use_ice_shelf
   character(len=80) :: mesg
@@ -200,10 +201,6 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   call callTree_enter("MOM_initialize_state(), MOM_state_initialization.F90")
   call log_version(PF, mdl, version, "")
   call get_param(PF, mdl, "DEBUG", debug, default=.false.)
-  call get_param(PF, mdl, "OBC_DEBUGGING_TESTS", debug_obc, &
-                 "If true, do additional calls resetting values to help verify the correctness "//&
-                 "of the open boundary condition code.", default=.false.,  &
-                 do_not_log=.true., old_name="DEBUG_OBC", debuggingParam=.true.)
 
   new_sim = is_new_run(restart_CS)
   just_read = .not.new_sim
@@ -215,7 +212,6 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
   use_temperature = associated(tv%T)
   useALE = associated(ALE_CSp)
   use_EOS = associated(tv%eqn_of_state)
-  use_OBC = associated(OBC)
   if (use_EOS) eos => tv%eqn_of_state
   use_ice_shelf = PRESENT(frac_shelf_h)
 
@@ -443,9 +439,9 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
     endif
   endif  ! not from_Z_file.
 
-  call get_param(PF, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+  if (present(OBC_for_bug)) then ; if (use_temperature .and. associated(OBC_for_bug)) then
+    call get_param(PF, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
                  default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
-  if (use_temperature .and. use_OBC) then
     ! Log this parameter later with the other OBC parameters.
     call get_param(PF, mdl, "OBC_RESERVOIR_INIT_BUG", OBC_reservoir_init_bug, &
                  "If true, set the OBC tracer reservoirs at the startup of a new run from the "//&
@@ -456,9 +452,9 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
       ! the temperatures and salinities can change due to the remapping and reading from the restarts.
       call pass_var(tv%T, G%Domain, complete=.false.)
       call pass_var(tv%S, G%Domain, complete=.true.)
-      call fill_temp_salt_segments(G, GV, US, OBC, tv)
+      call fill_temp_salt_segments(G, GV, US, OBC_for_bug, tv)
     endif
-  endif
+  endif ; endif
 
   ! Convert thicknesses from geometric distances in depth units to thickness units or mass-per-unit-area.
   if (new_sim .and. convert) call dz_to_thickness(dz, tv, h, G, GV, US)
@@ -507,10 +503,10 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
 
       if (new_sim .and. debug) &
         call hchksum(h, "Pre-ALE_regrid: h ", G%HI, haloshift=1, unscale=GV%H_to_MKS)
-      ! In this call, OBC is only used for the directions of OBCs when setting thicknesses at
+      ! In this call, OBC_for_remap is only used for the directions of OBCs when setting thicknesses at
       ! velocity points.
-      call ALE_regrid_accelerated(ALE_CSp, G, GV, US, h, tv, regrid_iterations, u, v, OBC, tracer_Reg, &
-                                  dt=dt, initial=.true.)
+      call ALE_regrid_accelerated(ALE_CSp, G, GV, US, h, tv, regrid_iterations, u, v, OBC_for_remap, &
+                                  tracer_Reg, dt=dt, initial=.true.)
     endif
   endif
 
@@ -597,9 +593,9 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
     if ( use_temperature ) call hchksum(tv%T, "MOM_initialize_state: T ", G%HI, haloshift=1, unscale=US%C_to_degC)
     if ( use_temperature ) call hchksum(tv%S, "MOM_initialize_state: S ", G%HI, haloshift=1, unscale=US%S_to_ppt)
     if ( use_temperature .and. debug_layers) then ; do k=1,nz
-      write(mesg,'("MOM_IS: T[",I2,"]")') k
+      write(mesg,'("MOM_IS: T[",I0,"]")') k
       call hchksum(tv%T(:,:,k), mesg, G%HI, haloshift=1, unscale=US%C_to_degC)
-      write(mesg,'("MOM_IS: S[",I2,"]")') k
+      write(mesg,'("MOM_IS: S[",I0,"]")') k
       call hchksum(tv%S(:,:,k), mesg, G%HI, haloshift=1, unscale=US%S_to_ppt)
     enddo ; endif
   endif
@@ -643,14 +639,58 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
     end select
   endif
 
+  ! Set-up of data Assimilation with incremental update
+  if (use_oda_incupd) then
+    call initialize_oda_incupd_file(G, GV, US, use_temperature, tv, h, u, v, &
+                                    PF, oda_incupd_CSp, restart_CS, Time)
+  endif
+
+  call callTree_leave('MOM_initialize_state()')
+
+end subroutine MOM_initialize_state
+
+subroutine MOM_initialize_OBCs(h, tv, OBC, Time, G, GV, US, PF, restart_CS, tracer_Reg)
+  type(ocean_grid_type),      intent(inout) :: G    !< The ocean's grid structure.
+  type(verticalGrid_type),    intent(in)    :: GV   !< The ocean's vertical grid structure.
+  type(unit_scale_type),      intent(in)    :: US   !< A dimensional unit scaling type
+  real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
+                              intent(inout) :: h    !< Layer thicknesses [H ~> m or kg m-2]
+  type(thermo_var_ptrs),      intent(inout) :: tv   !< A structure pointing to various thermodynamic
+                                                    !! variables
+  type(ocean_OBC_type),       pointer       :: OBC   !< The open boundary condition control structure.
+  type(time_type),            intent(in)    :: Time !< Time at the start of the run segment.
+  type(param_file_type),      intent(in)    :: PF   !< A structure indicating the open file to parse
+                                                    !! for model parameter values.
+  type(MOM_restart_CS),       intent(inout) :: restart_CS !< MOM restart control structure
+  type(tracer_registry_type), pointer       :: tracer_Reg !< A pointer to the tracer registry
+
+  ! Local variables
+  character(len=200) :: config
+  logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
+                          ! recreate the bugs, or if false bugs are only used if actively selected.
+  logical :: debug      ! If true, write debugging output.
+  logical :: debug_obc  ! If true, do additional calls resetting values to help debug the correctness
+                        ! of the open boundary condition code.
+  logical :: OBC_reservoir_init_bug  ! If true, set the OBC tracer reservoirs at the startup of a new
+                        ! run from the interior tracer concentrations regardless of properties that
+                        ! may be explicitly specified for the reservoir concentrations.
+
+  call callTree_enter('MOM_initialize_OBCs()')
   if (associated(OBC)) then
+    call get_param(PF, mdl, "DEBUG", debug, default=.false.)
+    call get_param(PF, mdl, "OBC_DEBUGGING_TESTS", debug_obc, &
+                 "If true, do additional calls resetting values to help verify the correctness "//&
+                 "of the open boundary condition code.", default=.false.,  &
+                 do_not_log=.true., old_name="DEBUG_OBC", debuggingParam=.true.)
+    call get_param(PF, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
+                 default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
     call get_param(PF, mdl, "OBC_RESERVOIR_INIT_BUG", OBC_reservoir_init_bug, &
                  "If true, set the OBC tracer reservoirs at the startup of a new run from the "//&
                  "interior tracer concentrations regardless of properties that may be explicitly "//&
                  "specified for the reservoir concentrations.", default=enable_bugs)
-    if (use_temperature) then
+    if (associated(tv%T)) then
       if (OBC_reservoir_init_bug) then
-        if (new_sim) then
+        if (is_new_run(restart_CS)) then
           ! Set up OBC%trex_x and OBC%tres_y as they have not been read from a restart file.
           call setup_OBC_tracer_reservoirs(G, GV, OBC)
           ! Ensure that the values of the tracer reservoirs that have just been set will not be revised.
@@ -663,17 +703,6 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
         call fill_temp_salt_segments(G, GV, US, OBC, tv)
       endif
     endif
-
-    ! This does halo updates for OBC-related fields, but it is not needed?
-    ! call open_boundary_halo_update(G, OBC)
-
-    ! This allocates the arrays on the segments for open boundary data
-    call initialize_segment_data(G, GV, US, OBC, PF)
-!     call open_boundary_config(G, US, PF, OBC)
-
-    call calc_derived_thermo(tv, h, G, GV, US)
-    ! Call this during initialization to fill boundary arrays from fixed values
-    call update_OBC_segment_data(G, GV, US, OBC, tv, h, Time)
 
     ! This controls user code for setting open boundary data
     call get_param(PF, mdl, "OBC_USER_CONFIG", config, &
@@ -708,31 +737,20 @@ subroutine MOM_initialize_state(u, v, h, tv, Time, G, GV, US, PF, dirs, &
               "OBC_USER_CONFIG = "//trim(config)//" have not been fully implemented.")
     endif
 
-    if (open_boundary_query(OBC, apply_open_OBC=.true.)) then
-      call set_tracer_data(OBC, tv, h, G, GV, PF)
-    endif
-
-  ! if (open_boundary_query(OBC, apply_nudged_OBC=.true.)) then
-  !   call set_3D_OBC_data(OBC, tv, h, G, PF, tracer_Reg)
-  ! endif
-    ! Still need a way to specify the boundary values
-
     if (debug) then
-      call hchksum(G%mask2dT, 'MOM_initialize_state: mask2dT ', G%HI)
-      call uvchksum('MOM_initialize_state: mask2dC[uv]', G%mask2dCu, G%mask2dCv, G%HI)
-      call qchksum(G%mask2dBu, 'MOM_initialize_state: mask2dBu ', G%HI)
+      call hchksum(G%mask2dT, 'MOM_initialize_OBCs: mask2dT ', G%HI)
+      call uvchksum('MOM_initialize_OBCs: mask2dC[uv]', G%mask2dCu, G%mask2dCv, G%HI)
+      call qchksum(G%mask2dBu, 'MOM_initialize_OBCs: mask2dBu ', G%HI)
     endif
     if (debug_OBC) call open_boundary_test_extern_h(G, GV, OBC, h)
+
+    if (OBC%use_h_res) &
+      call fill_thickness_segments(G, GV, US, OBC, h)
   endif
 
-  call callTree_leave('MOM_initialize_state()')
+  call callTree_leave('MOM_initialize_OBCs()')
 
-  ! Set-up of data Assimilation with incremental update
-  if (use_oda_incupd) then
-    call initialize_oda_incupd_file(G, GV, US, use_temperature, tv, h, u, v, &
-                                    PF, oda_incupd_CSp, restart_CS, Time)
-  endif
-end subroutine MOM_initialize_state
+end subroutine MOM_initialize_OBCs
 
 !> Reads the layer thicknesses or interface heights from a file.
 subroutine initialize_thickness_from_file(h, depth_tot, G, GV, US, param_file, file_has_thickness, &
@@ -859,7 +877,7 @@ subroutine initialize_thickness_from_file(h, depth_tot, G, GV, US, param_file, f
 
       if ((inconsistent > 0) .and. (is_root_pe())) then
         write(mesg,'("Thickness initial conditions are inconsistent ",'// &
-                 '"with topography in ",I8," places.")') inconsistent
+                 '"with topography in ",I0," places.")') inconsistent
         call MOM_error(WARNING, mesg)
       endif
     endif
@@ -904,7 +922,7 @@ subroutine adjustEtaToFitBathymetry(G, GV, US, eta, h, ht, dZ_ref_eta)
   call sum_across_PEs(contractions)
   if ((contractions > 0) .and. (is_root_pe())) then
     write(mesg,'("Thickness initial conditions were contracted ",'// &
-               '"to fit topography in ",I8," places.")') contractions
+               '"to fit topography in ",I0," places.")') contractions
     call MOM_error(WARNING, 'adjustEtaToFitBathymetry: '//mesg)
   endif
 
@@ -942,7 +960,7 @@ subroutine adjustEtaToFitBathymetry(G, GV, US, eta, h, ht, dZ_ref_eta)
   call sum_across_PEs(dilations)
   if ((dilations > 0) .and. (is_root_pe())) then
     write(mesg,'("Thickness initial conditions were dilated ",'// &
-               '"to fit topography in ",I8," places.")') dilations
+               '"to fit topography in ",I0," places.")') dilations
     call MOM_error(WARNING, 'adjustEtaToFitBathymetry: '//mesg)
   endif
 
@@ -2885,7 +2903,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
 
     ! Build the target grid (and set the model thickness to it)
 
-    call ALE_initRegridding( GV, US, G%max_depth, PF, mdl, regridCS ) ! sets regridCS
+    call ALE_initRegridding( G, GV, US, G%max_depth, PF, mdl, regridCS ) ! sets regridCS
     if (remap_general) then
       dz_neglect = set_h_neglect(GV, remap_answer_date, dz_neglect_edge)
     else
@@ -3005,7 +3023,7 @@ subroutine MOM_temp_salt_initialize_from_Z(h, tv, depth_tot, G, GV, US, PF, just
 
       if ((inconsistent > 0) .and. (is_root_pe())) then
         write(mesg, '("Thickness initial conditions are inconsistent ",'// &
-                    '"with topography in ",I5," places.")') inconsistent
+                    '"with topography in ",I0," places.")') inconsistent
         call MOM_error(WARNING, mesg)
       endif
     endif

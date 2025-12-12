@@ -217,9 +217,6 @@ subroutine advect_tracer(h_end, uhtr, vhtr, OBC, dt, G, GV, US, CS, Reg, x_first
     if (associated(Reg%Tr(m)%ad_x)) Reg%Tr(m)%ad_x(:,:,:) = 0.0
     if (associated(Reg%Tr(m)%ad_y)) Reg%Tr(m)%ad_y(:,:,:) = 0.0
     if (associated(Reg%Tr(m)%advection_xy)) Reg%Tr(m)%advection_xy(:,:,:) = 0.0
-    if (associated(Reg%Tr(m)%advectionc_xy)) Reg%Tr(m)%advectionc_xy(:,:,:) = 0.0
-    if (associated(Reg%Tr(m)%advectionc_x)) Reg%Tr(m)%advectionc_x(:,:,:) = 0.0
-    if (associated(Reg%Tr(m)%advectionc_y)) Reg%Tr(m)%advectionc_y(:,:,:) = 0.0
     if (associated(Reg%Tr(m)%ad2d_x)) Reg%Tr(m)%ad2d_x(:,:) = 0.0
     if (associated(Reg%Tr(m)%ad2d_y)) Reg%Tr(m)%ad2d_y(:,:) = 0.0
   enddo
@@ -392,7 +389,6 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
                         ! the grid box, both in [H L2 ~> m3 or kg].
   real :: uhh(SZIB_(G)) ! The zonal flux that occurs during the
                         ! current iteration [H L2 ~> m3 or kg].
-  real, dimension(SZIB_(G)) :: tprev !< tracer conc at the end of previous step.
   real, dimension(SZIB_(G)) :: &
     hlst, &             ! Work variable [H L2 ~> m3 or kg].
     Ihnew, &            ! Work variable [H-1 L-2 ~> m-3 or kg-1].
@@ -684,15 +680,12 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
 
     ! Update do_i so that nothing changes outside of the OBC (problem for interior OBCs only)
     if (associated(OBC)) then
-      if ((OBC%exterior_OBC_bug .eqv. .false.) .and. (OBC%OBC_pe)) then
+      if ((.not.OBC%exterior_OBC_bug) .and. (OBC%OBC_pe)) then
         if (OBC%specified_u_BCs_exist_globally .or. OBC%open_u_BCs_exist_globally) then
-          do i=is,ie-1 ; if (OBC%segnum_u(I,j) /= OBC_NONE) then
-            if (OBC%segment(OBC%segnum_u(I,j))%direction == OBC_DIRECTION_E) then
-              do_i(i+1,j) = .false.
-            elseif (OBC%segment(OBC%segnum_u(I,j))%direction == OBC_DIRECTION_W) then
-              do_i(i,j) = .false.
-            endif
-          endif ; enddo
+          do i=is,ie-1
+            if (OBC%segnum_u(I,j) > 0) do_i(i+1,j) = .false.  ! OBC_DIRECTION_E
+            if (OBC%segnum_u(I,j) < 0) do_i(i,j) = .false.    ! OBC_DIRECTION_W
+          enddo
         endif
       endif
     endif
@@ -704,7 +697,6 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
       do i=is,ie
         if (do_i(i,j)) then
           if (Ihnew(i) > 0.0) then
-            tprev(i)=Tr(m)%t(i,j,k)
             Tr(m)%t(i,j,k) = (Tr(m)%t(i,j,k) * hlst(i) - &
                               (flux_x(I,j,m) - flux_x(I-1,j,m))) * Ihnew(i)
           endif
@@ -725,16 +717,7 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, OBC, domore_u, ntr, Idt, &
                                           Idt * G%IareaT(i,j)
         endif ; enddo
       endif
-      if (associated(Tr(m)%advectionc_xy)) then
-        do i=is,ie ; if (do_i(i,j)) then
-          Tr(m)%advectionc_xy(i,j,k) = Tr(m)%advectionc_xy(i,j,k)+(Tr(m)%t(i,j,k) - tprev(i))*Idt*G%mask2dT(i,j)
-        endif ; enddo
-      endif
-      if (associated(Tr(m)%advectionc_x)) then
-        do i=is,ie ; if (do_i(i,j)) then
-          Tr(m)%advectionc_x(i,j,k) =(Tr(m)%t(i,j,k) - tprev(i))*Idt*G%mask2dT(i,j)
-        endif ; enddo
-      endif
+
     enddo
 
   endif ; enddo ! End of j-loop.
@@ -794,7 +777,6 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
     T_tmp               ! The copy of the tracer concentration at constant i,k [conc].
   real :: vhh(SZI_(G),SZJB_(G)) ! The meridional flux that occurs during the
                                 ! current iteration [H L2 ~> m3 or kg].
-  real, dimension(SZIB_(G)) :: tprev !< tracer conc at the end of previous step.
   real :: hup, hlos             ! hup is the upwind volume, hlos is the
                                 ! part of that volume that might be lost
                                 ! due to advection out the other side of
@@ -1114,16 +1096,8 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
       if ((OBC%exterior_OBC_bug .eqv. .false.) .and. (OBC%OBC_pe)) then
         if (OBC%specified_v_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) then
           do i=is,ie
-            if (OBC%segnum_v(i,J-1) /= OBC_NONE) then
-              if (OBC%segment(OBC%segnum_v(i,J-1))%direction == OBC_DIRECTION_N) then
-                do_i(i,j) = .false.
-              endif
-            endif
-            if (OBC%segnum_v(i,J) /= OBC_NONE) then
-              if (OBC%segment(OBC%segnum_v(i,J))%direction == OBC_DIRECTION_S) then
-                do_i(i,j) = .false.
-              endif
-            endif
+            if (OBC%segnum_v(i,J-1) > 0) do_i(i,j) = .false.  ! OBC_DIRECTION_N
+            if (OBC%segnum_v(i,J) < 0) do_i(i,j) = .false.  ! OBC_DIRECTION_S
           enddo
         endif
       endif
@@ -1132,10 +1106,10 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
     ! update tracer and save some diagnostics
     do m=1,ntr
       do i=is,ie ; if (do_i(i,j)) then
-        tprev(i)=Tr(m)%t(i,j,k)
         Tr(m)%t(i,j,k) = (Tr(m)%t(i,j,k) * hlst(i) - &
                           (flux_y(i,m,J) - flux_y(i,m,J-1))) * Ihnew(i)
       endif ; enddo
+
       ! diagnose convergence of flux_y and add to convergence of flux_x.
       ! division by areaT to get into W/m2 for heat and kg/(s*m2) for salt.
       if (associated(Tr(m)%advection_xy)) then
@@ -1145,16 +1119,7 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, OBC, domore_v, ntr, Idt, &
                                           G%IareaT(i,j)
         endif ; enddo
       endif
-      if (associated(Tr(m)%advectionc_xy)) then
-        do i=is,ie ; if (do_i(i,j)) then
-          Tr(m)%advectionc_xy(i,j,k) = Tr(m)%advectionc_xy(i,j,k)+(Tr(m)%t(i,j,k) - tprev(i))*Idt*G%mask2dT(i,j)
-        endif ; enddo
-      endif
-      if (associated(Tr(m)%advectionc_y)) then
-        do i=is,ie ; if (do_i(i,j)) then
-          Tr(m)%advectionc_y(i,j,k) = (Tr(m)%t(i,j,k) - tprev(i))*Idt*G%mask2dT(i,j)
-        endif ; enddo
-      endif
+
     enddo
   endif ; enddo ! End of j-loop.
 

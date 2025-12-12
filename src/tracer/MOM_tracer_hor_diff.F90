@@ -406,16 +406,6 @@ subroutine tracer_hordiff(h, dt, MEKE, VarMix, visc, G, GV, US, CS, Reg, tv, do_
     if (associated(Reg%Tr(m)%df2d_y)) then
       do J=js-1,je ; do i=is,ie ; Reg%Tr(m)%df2d_y(i,J) = 0.0 ; enddo ; enddo
     endif
-    if (associated(Reg%Tr(m)%diffusionc_xy)) then
-      do k=1,nz ; do j=js,je ; do i=is,ie
-        Reg%Tr(m)%diffusionc_xy(i,j,k) = 0.0
-      enddo ; enddo ; enddo
-    endif
-    if (associated(Reg%Tr(m)%diffusion_xy)) then
-      do k=1,nz ; do j=js,je ; do i=is,ie
-        Reg%Tr(m)%diffusion_xy(i,j,k) = 0.0
-      enddo ; enddo ; enddo
-    endif
   enddo
 
   if (CS%use_hor_bnd_diffusion) then
@@ -606,12 +596,6 @@ subroutine tracer_hordiff(h, dt, MEKE, VarMix, visc, G, GV, US, CS, Reg, tv, do_
           enddo ; enddo ; endif
           do j=js,je ; do i=is,ie
             Reg%Tr(m)%t(i,j,k) = Reg%Tr(m)%t(i,j,k) + dTr(i,j)
-            if (associated(Reg%Tr(m)%diffusionc_xy)) then
-                Reg%Tr(m)%diffusionc_xy(i,j,k) = dTr(i,j) * Idt
-            endif
-            if (associated(Reg%Tr(m)%diffusion_xy)) then
-                Reg%Tr(m)%diffusion_xy(i,j,k) = dTr(i,j) * Idt * (h(i,j,k)+h_neglect)
-            endif
           enddo ; enddo
         enddo
 
@@ -1657,8 +1641,6 @@ subroutine tracer_hor_diff_init(Time, G, GV, US, param_file, diag, EOS, diabatic
   ! This include declares and sets the variable "version".
 # include "version_variable.h"
   character(len=40)  :: mdl = "MOM_tracer_hor_diff" ! This module's name.
-  logical :: enable_bugs  ! If true, the defaults for recently added bug-fix flags are set to
-                          ! recreate the bugs, or if false bugs are only used if actively selected.
   integer :: default_answer_date
 
   if (associated(CS)) then
@@ -1734,14 +1716,11 @@ subroutine tracer_hor_diff_init(Time, G, GV, US, param_file, diag, EOS, diabatic
                  "along-isopycnal mixed layer to interior mixing code, while higher values use "//&
                  "mathematically equivalent expressions that recover rotational symmetry "//&
                  "when DIFFUSE_ML_TO_INTERIOR is true.", &
-                 default=20240101, do_not_log=.not.CS%Diffuse_ML_interior)
-                 !### Change the default later to default_answer_date.
-  call get_param(param_file, mdl, "ENABLE_BUGS_BY_DEFAULT", enable_bugs, &
-                 default=.true., do_not_log=.true.)  ! This is logged from MOM.F90.
+                 default=default_answer_date, do_not_log=.not.CS%Diffuse_ML_interior)
   call get_param(param_file, mdl, "HOR_DIFF_LIMIT_BUG", CS%limit_bug, &
                  "If true and the answer date is 20240330 or below, use a rotational symmetry "//&
                  "breaking bug when limiting the tracer properties in tracer_epipycnal_ML_diff.", &
-                 default=enable_bugs, do_not_log=((.not.CS%Diffuse_ML_interior).or.(CS%answer_date>=20240331)))
+                 default=.false., do_not_log=((.not.CS%Diffuse_ML_interior).or.(CS%answer_date>=20240331)))
   CS%ML_KhTR_scale = 1.0
   if (CS%Diffuse_ML_interior) then
     call get_param(param_file, mdl, "ML_KHTR_SCALE", CS%ML_KhTR_scale, &

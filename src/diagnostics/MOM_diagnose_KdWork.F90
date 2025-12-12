@@ -32,13 +32,13 @@ type vbf_CS
   ! 3d varying Kd contributions
   real, pointer, dimension(:,:,:) :: &
     Bflx_salt => NULL(), & !< Salinity contribution to buoyancy flux at interfaces
-                           !! [H Z T-3 ~> m2 s-3 or kg m-1 s-3 = W m-3]
+                           !! [H Z T-3 ~> m2 s-3 or W m-3]
     Bflx_temp => NULL(), & !< Temperature contribution to buoyancy flux at interfaces
-                           !! [H Z T-3 ~> m2 s-3 or kg m-1 s-3 = W m-3]
+                           !! [H Z T-3 ~> m2 s-3 or W m-3]
     Bflx_salt_dz => NULL(), & !< Salinity contribution to integral of buoyancy flux over layer
-                              !! [H Z2 T-3 ~> m3 s-3 or kg m-1 s-3 = W m-2]
+                              !! [H Z2 T-3 ~> m3 s-3 or W m-2]
     Bflx_temp_dz => NULL(), & !< Temperature contribution to integral of buoyancy flux over layer
-                              !! [H Z2 T-3 ~> m3 s-3 or kg m-1 s-3 = W m-2]
+                              !! [H Z2 T-3 ~> m3 s-3 or W m-2]
     ! The following are all allocatable arrays that store copies of process driven Kd, so that
     ! the process driven buoyancy flux and work can be derived at the end of the time step.
     Kd_salt => NULL(), &   !< total diapycnal diffusivity of salt at interfaces [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
@@ -340,7 +340,7 @@ subroutine KdWork_Diagnostics(G,GV,US,diag,VBF,N2_Salt,N2_Temp,dz)
                 global_area_integral(VBF%Bflx_salt_dz(:,:,k), G, tmp_scale=GV%H_to_kg_m2*US%Z_to_m**2*US%s_to_T**3))
       enddo
     endif
-  elseif (VBF%id_Bdif_ePBL>0) then
+  elseif (VBF%id_Bdif_bkgnd>0) then
     call diagnoseKdWork(G, GV, N2_salt, VBF%Kd_bkgnd, VBF%Bflx_salt)
     call diagnoseKdWork(G, GV, N2_temp, VBF%Kd_bkgnd, VBF%Bflx_temp)
   endif
@@ -740,11 +740,11 @@ subroutine diagnoseKdWork(G, GV, N2, Kd, Bdif_flx, dz, Bdif_flx_dz)
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
                            intent(in)  :: Kd   !< Diffusivity [H Z T-1 ~> m2 s-1 or kg m-1 s-1]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)+1), &
-                           intent(out) :: Bdif_flx !< Buoyancy flux [H Z T-3 ~> m2 s-3 or kg m-1 s-3 = W m-3]
+                           intent(out) :: Bdif_flx !< Buoyancy flux [H Z T-3 ~> m2 s-3 or W m-3]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
                  intent(in), optional :: dz    !< Grid spacing [Z ~> m]
   real, dimension(SZI_(G),SZJ_(G),SZK_(GV)), &
-                intent(out), optional :: Bdif_flx_dz !< Buoyancy flux over layer [H Z2 T-3 ~> m3 s-3 or kg s-3 = W m-2]
+                intent(out), optional :: Bdif_flx_dz !< Buoyancy flux over layer [H Z2 T-3 ~> m3 s-3 or W m-2]
 
   integer :: i, j, k
 
@@ -783,37 +783,40 @@ subroutine Allocate_VBF_CS(G, GV, VBF)
   if (VBF%do_bflx_temp_dz) &
      allocate(VBF%Bflx_temp_dz(isd:ied,jsd:jed,nz), source=0.0)
 
-  if (VBF%do_bflx_salt .or. VBF%do_bflx_salt_dz ) &
+  if (VBF%id_Bdif_salt_dz>0 .or. VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_salt>0 .or. VBF%id_Bdif>0 .or. &
+      VBF%id_Bdif_idz>0 .or. VBF%id_Bdif_salt_idz>0 .or. VBF%id_Bdif_idV>0 .or. VBF%id_Bdif_salt_idV>0) &
     allocate(VBF%Kd_salt(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%do_bflx_temp .or. VBF%do_bflx_temp_dz ) &
+  if (VBF%id_Bdif_temp_dz>0 .or. VBF%id_Bdif_dz>0 .or. VBF%id_Bdif_temp>0 .or. VBF%id_Bdif>0 .or. &
+      VBF%id_Bdif_idz>0 .or. VBF%id_Bdif_temp_idz>0 .or. VBF%id_Bdif_idV>0 .or. VBF%id_Bdif_temp_idV>0) &
     allocate(VBF%Kd_temp(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_BBL>0 .or. VBF%id_Bdif_dz_BBL>0 .or. VBF%id_Bdif_idV_BBL>0) &
+
+  if (VBF%id_Bdif_BBL>0 .or. VBF%id_Bdif_dz_BBL>0 .or. VBF%id_Bdif_idz_BBL>0 .or. VBF%id_Bdif_idV_BBL>0) &
     allocate(VBF%Kd_BBL(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_ePBL>0 .or. VBF%id_Bdif_dz_ePBL>0 .or. VBF%id_Bdif_idV_ePBL>0) &
+  if (VBF%id_Bdif_ePBL>0 .or. VBF%id_Bdif_dz_ePBL>0 .or. VBF%id_Bdif_idz_ePBL>0 .or. VBF%id_Bdif_idV_ePBL>0) &
     allocate(VBF%Kd_ePBL(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_KS>0 .or. VBF%id_Bdif_dz_KS>0 .or. VBF%id_Bdif_idV_KS>0) &
+  if (VBF%id_Bdif_KS>0 .or. VBF%id_Bdif_dz_KS>0 .or. VBF%id_Bdif_idz_KS>0 .or. VBF%id_Bdif_idV_KS>0) &
     allocate(VBF%Kd_KS(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_bkgnd>0 .or. VBF%id_Bdif_dz_bkgnd>0 .or. VBF%id_Bdif_idV_bkgnd>0) &
+  if (VBF%id_Bdif_bkgnd>0 .or. VBF%id_Bdif_dz_bkgnd>0 .or. VBF%id_Bdif_idz_bkgnd>0 .or. VBF%id_Bdif_idV_bkgnd>0) &
     allocate(VBF%Kd_bkgnd(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_ddiff_temp>0 .or. VBF%id_Bdif_dz_ddiff_temp>0 .or. VBF%id_Bdif_idV_ddiff_temp>0) &
-    allocate(VBF%Kd_ddiff_T(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_ddiff_salt>0 .or. VBF%id_Bdif_dz_ddiff_salt>0 .or. VBF%id_Bdif_idV_ddiff_salt>0) &
-    allocate(VBF%Kd_ddiff_S(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_leak>0 .or. VBF%id_Bdif_dz_leak>0 .or. VBF%id_Bdif_idV_leak>0) &
+  if (VBF%id_Bdif_ddiff_temp>0 .or. VBF%id_Bdif_dz_ddiff_temp>0 .or. VBF%id_Bdif_idz_ddiff_temp>0 &
+      .or. VBF%id_Bdif_idV_ddiff_temp>0) allocate(VBF%Kd_ddiff_T(isd:ied,jsd:jed,nz+1), source=0.0)
+  if (VBF%id_Bdif_ddiff_salt>0 .or. VBF%id_Bdif_dz_ddiff_salt>0 .or. VBF%id_Bdif_idV_ddiff_salt>0 &
+      .or. VBF%id_Bdif_idV_ddiff_salt>0) allocate(VBF%Kd_ddiff_S(isd:ied,jsd:jed,nz+1), source=0.0)
+  if (VBF%id_Bdif_leak>0 .or. VBF%id_Bdif_dz_leak>0 .or. VBF%id_Bdif_idz_leak>0 .or. VBF%id_Bdif_idV_leak>0) &
     allocate(VBF%Kd_leak(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_quad>0 .or. VBF%id_Bdif_dz_quad>0 .or. VBF%id_Bdif_idV_quad>0) &
+  if (VBF%id_Bdif_quad>0 .or. VBF%id_Bdif_dz_quad>0 .or. VBF%id_Bdif_idz_quad>0 .or. VBF%id_Bdif_idV_quad>0) &
     allocate(VBF%Kd_quad(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_itidal>0 .or. VBF%id_Bdif_dz_itidal>0 .or. VBF%id_Bdif_idV_itidal>0) &
+  if (VBF%id_Bdif_itidal>0 .or. VBF%id_Bdif_dz_itidal>0 .or. VBF%id_Bdif_idz_itidal>0 .or. VBF%id_Bdif_idV_itidal>0) &
     allocate(VBF%Kd_itidal(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_Froude>0 .or. VBF%id_Bdif_dz_Froude>0 .or. VBF%id_Bdif_idV_Froude>0) &
+  if (VBF%id_Bdif_Froude>0 .or. VBF%id_Bdif_dz_Froude>0 .or. VBF%id_Bdif_idz_Froude>0 .or. VBF%id_Bdif_idV_Froude>0) &
     allocate(VBF%Kd_Froude(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_slope>0 .or. VBF%id_Bdif_dz_slope>0 .or. VBF%id_Bdif_idV_slope>0) &
+  if (VBF%id_Bdif_slope>0 .or. VBF%id_Bdif_dz_slope>0 .or. VBF%id_Bdif_idz_slope>0 .or. VBF%id_Bdif_idV_slope>0) &
     allocate(VBF%Kd_slope(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_lowmode>0 .or. VBF%id_Bdif_dz_lowmode>0 .or. VBF%id_Bdif_idV_lowmode>0) &
-    allocate(VBF%Kd_lowmode(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_Niku>0 .or. VBF%id_Bdif_dz_Niku>0 .or. VBF%id_Bdif_idV_Niku>0) &
+  if (VBF%id_Bdif_lowmode>0 .or. VBF%id_Bdif_dz_lowmode>0 .or. VBF%id_Bdif_idz_lowmode>0 .or. &
+      VBF%id_Bdif_idV_lowmode>0) allocate(VBF%Kd_lowmode(isd:ied,jsd:jed,nz+1), source=0.0)
+  if (VBF%id_Bdif_Niku>0 .or. VBF%id_Bdif_dz_Niku>0 .or. VBF%id_Bdif_idz_Niku>0 .or. VBF%id_Bdif_idV_Niku>0) &
     allocate(VBF%Kd_Niku(isd:ied,jsd:jed,nz+1), source=0.0)
-  if (VBF%id_Bdif_itides>0 .or. VBF%id_Bdif_dz_itides>0 .or. VBF%id_Bdif_idV_itides>0) &
+  if (VBF%id_Bdif_itides>0 .or. VBF%id_Bdif_dz_itides>0 .or. VBF%id_Bdif_idz_itides>0 .or. VBF%id_Bdif_idV_itides>0) &
     allocate(VBF%Kd_itides(isd:ied,jsd:jed,nz+1), source=0.0)
 
 end subroutine Allocate_VBF_CS
